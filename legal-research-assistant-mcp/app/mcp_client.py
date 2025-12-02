@@ -8,7 +8,6 @@ API directly since MCP-to-MCP communication patterns are still evolving.
 import logging
 import os
 from typing import Any
-from urllib.parse import urlencode
 
 import httpx
 from dotenv import load_dotenv
@@ -222,7 +221,7 @@ class CourtListenerClient:
 
             # Fallback: if no exact match found, return oldest result
             # (likely the original case)
-            logger.warning(f"No exact citation match, returning oldest result")
+            logger.warning("No exact citation match, returning oldest result")
             return data["results"][0]
 
         except httpx.HTTPError as e:

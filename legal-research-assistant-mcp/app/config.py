@@ -2,7 +2,6 @@
 
 import logging
 from pathlib import Path
-from typing import Any
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -72,3 +71,8 @@ settings.configure_logging()
 
 # Create cache directory if it doesn't exist
 settings.network_cache_dir.mkdir(parents=True, exist_ok=True)
+
+
+def get_settings() -> Settings:
+    """Get the global settings instance."""
+    return settings

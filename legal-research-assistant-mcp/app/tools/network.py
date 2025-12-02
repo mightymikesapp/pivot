@@ -16,32 +16,13 @@ logger = logging.getLogger(__name__)
 network_server = FastMCP[Any]("Citation Network")
 
 
-@network_server.tool()
-async def build_citation_network(
+async def build_citation_network_impl(
     citation: str,
     max_depth: int = 2,
     max_nodes: int = 100,
     include_treatments: bool = True,
 ) -> dict[str, Any]:
-    """Build a citation network for a given case.
-
-    Creates a graph showing how cases cite each other, starting from the target case.
-    Useful for understanding precedent flow and case influence.
-
-    Args:
-        citation: The citation to build a network around (e.g., "410 U.S. 113")
-        max_depth: Maximum depth to traverse (1 = direct citations only, 2 = citations of citations)
-        max_nodes: Maximum number of nodes to include in the network
-        include_treatments: Whether to include treatment analysis for edges
-
-    Returns:
-        Dictionary containing:
-        - root_citation: The citation at the center of the network
-        - root_case_name: Name of the root case
-        - nodes: List of case nodes in the network
-        - edges: List of citation edges with treatment info
-        - statistics: Network statistics and metrics
-    """
+    """Implementation of build_citation_network."""
     settings = get_settings()
     client = get_client()
 
@@ -91,9 +72,9 @@ async def build_citation_network(
             treatments.append(
                 {
                     "citing_case": citing_case,
-                    "treatment": treatment["treatment"],
-                    "confidence": treatment["confidence"],
-                    "excerpt": treatment["excerpt"],
+                    "treatment": treatment.treatment_type.value,
+                    "confidence": treatment.confidence,
+                    "excerpt": treatment.excerpt,
                 }
             )
 
@@ -135,8 +116,7 @@ async def build_citation_network(
     }
 
 
-@network_server.tool()
-async def filter_citation_network(
+async def filter_citation_network_impl(
     citation: str,
     treatments: list[str] | None = None,
     min_confidence: float = 0.5,
@@ -144,26 +124,11 @@ async def filter_citation_network(
     date_before: str | None = None,
     max_nodes: int = 100,
 ) -> dict[str, Any]:
-    """Build a filtered citation network showing only specific relationships.
-
-    Useful for focusing on particular types of treatment (e.g., only negative signals)
-    or specific time periods.
-
-    Args:
-        citation: The citation to analyze
-        treatments: List of treatments to include (e.g., ["overruled", "questioned", "criticized"])
-        min_confidence: Minimum confidence score (0.0-1.0) for treatment classification
-        date_after: Only include cases filed after this date (YYYY-MM-DD format)
-        date_before: Only include cases filed before this date (YYYY-MM-DD format)
-        max_nodes: Maximum number of nodes to include
-
-    Returns:
-        Filtered citation network with nodes and edges matching criteria
-    """
+    """Implementation of filter_citation_network."""
     logger.info(f"Building filtered citation network for {citation}")
 
     # First build the full network
-    full_network = await build_citation_network(
+    full_network = await build_citation_network_impl(
         citation=citation,
         max_depth=1,
         max_nodes=max_nodes,
@@ -235,28 +200,12 @@ async def filter_citation_network(
     }
 
 
-@network_server.tool()
-async def get_network_statistics(citation: str, max_nodes: int = 100) -> dict[str, Any]:
-    """Get statistical analysis of a citation network.
-
-    Provides metrics about case influence, treatment distribution, and network structure.
-
-    Args:
-        citation: The citation to analyze
-        max_nodes: Maximum number of nodes to include in analysis
-
-    Returns:
-        Dictionary containing:
-        - citation_count: How many cases cite this case
-        - treatment_distribution: Breakdown of how citing cases treat this case
-        - temporal_distribution: Citations over time
-        - court_distribution: Which courts cite this case most
-        - influence_score: Composite score of case influence
-    """
+async def get_network_statistics_impl(citation: str, max_nodes: int = 100) -> dict[str, Any]:
+    """Implementation of get_network_statistics."""
     logger.info(f"Getting network statistics for {citation}")
 
     # Build network with treatments
-    network = await build_citation_network(
+    network = await build_citation_network_impl(
         citation=citation,
         max_depth=1,
         max_nodes=max_nodes,
@@ -317,37 +266,18 @@ async def get_network_statistics(citation: str, max_nodes: int = 100) -> dict[st
     }
 
 
-@network_server.tool()
-async def visualize_citation_network(
+async def visualize_citation_network_impl(
     citation: str,
     diagram_type: str = "flowchart",
     direction: str = "TB",
     color_by_treatment: bool = True,
     max_nodes: int = 50,
 ) -> dict[str, Any]:
-    """Generate a Mermaid diagram visualization of a citation network.
-
-    Creates beautiful visualizations perfect for Obsidian notes and academic papers.
-    Supports multiple diagram types including flowcharts, graphs, and timelines.
-
-    Args:
-        citation: The citation to visualize
-        diagram_type: Type of diagram ("flowchart", "graph", "timeline", or "all")
-        direction: Diagram direction - "TB" (top-bottom), "LR" (left-right), "BT", "RL"
-        color_by_treatment: Whether to color-code by treatment type
-        max_nodes: Maximum number of nodes to include
-
-    Returns:
-        Dictionary containing:
-        - mermaid_syntax: The Mermaid diagram code (ready to paste in Obsidian)
-        - summary_stats: Text summary of the network
-        - node_count: Number of nodes in visualization
-        - edge_count: Number of edges in visualization
-    """
+    """Implementation of visualize_citation_network."""
     logger.info(f"Generating Mermaid visualization for {citation}")
 
     # Build the citation network
-    network = await build_citation_network(
+    network = await build_citation_network_impl(
         citation=citation,
         max_depth=1,
         max_nodes=max_nodes,
@@ -403,36 +333,18 @@ async def visualize_citation_network(
     }
 
 
-@network_server.tool()
-async def generate_citation_report(
+async def generate_citation_report_impl(
     citation: str,
     include_diagram: bool = True,
     include_statistics: bool = True,
     treatment_focus: list[str] | None = None,
     max_nodes: int = 50,
 ) -> dict[str, Any]:
-    """Generate a comprehensive citation analysis report.
-
-    Creates a complete markdown report with visualizations, statistics, and analysis.
-    Perfect for inclusion in legal research notes and academic papers.
-
-    Args:
-        citation: The citation to analyze
-        include_diagram: Whether to include Mermaid diagram
-        include_statistics: Whether to include detailed statistics
-        treatment_focus: Optional list of treatments to highlight (e.g., ["overruled", "questioned"])
-        max_nodes: Maximum number of cases to include
-
-    Returns:
-        Dictionary containing:
-        - markdown_report: Complete markdown-formatted report
-        - mermaid_diagram: Mermaid syntax (if include_diagram=True)
-        - statistics: Detailed statistics (if include_statistics=True)
-    """
+    """Implementation of generate_citation_report."""
     logger.info(f"Generating citation report for {citation}")
 
     # Build network
-    network = await build_citation_network(
+    network = await build_citation_network_impl(
         citation=citation,
         max_depth=1,
         max_nodes=max_nodes,
@@ -525,3 +437,146 @@ async def generate_citation_report(
         "statistics": network["statistics"] if include_statistics else None,
         "usage_tip": "Copy the markdown_report and paste directly into your Obsidian vault",
     }
+
+
+@network_server.tool()
+async def build_citation_network(
+    citation: str,
+    max_depth: int = 2,
+    max_nodes: int = 100,
+    include_treatments: bool = True,
+) -> dict[str, Any]:
+    """Build a citation network for a given case.
+
+    Creates a graph showing how cases cite each other, starting from the target case.
+    Useful for understanding precedent flow and case influence.
+
+    Args:
+        citation: The citation to build a network around (e.g., "410 U.S. 113")
+        max_depth: Maximum depth to traverse (1 = direct citations only, 2 = citations of citations)
+        max_nodes: Maximum number of nodes to include in the network
+        include_treatments: Whether to include treatment analysis for edges
+
+    Returns:
+        Dictionary containing:
+        - root_citation: The citation at the center of the network
+        - root_case_name: Name of the root case
+        - nodes: List of case nodes in the network
+        - edges: List of citation edges with treatment info
+        - statistics: Network statistics and metrics
+    """
+    return await build_citation_network_impl(citation, max_depth, max_nodes, include_treatments)
+
+
+@network_server.tool()
+async def filter_citation_network(
+    citation: str,
+    treatments: list[str] | None = None,
+    min_confidence: float = 0.5,
+    date_after: str | None = None,
+    date_before: str | None = None,
+    max_nodes: int = 100,
+) -> dict[str, Any]:
+    """Build a filtered citation network showing only specific relationships.
+
+    Useful for focusing on particular types of treatment (e.g., only negative signals)
+    or specific time periods.
+
+    Args:
+        citation: The citation to analyze
+        treatments: List of treatments to include (e.g., ["overruled", "questioned", "criticized"])
+        min_confidence: Minimum confidence score (0.0-1.0) for treatment classification
+        date_after: Only include cases filed after this date (YYYY-MM-DD format)
+        date_before: Only include cases filed before this date (YYYY-MM-DD format)
+        max_nodes: Maximum number of nodes to include
+
+    Returns:
+        Filtered citation network with nodes and edges matching criteria
+    """
+    return await filter_citation_network_impl(
+        citation, treatments, min_confidence, date_after, date_before, max_nodes
+    )
+
+
+@network_server.tool()
+async def get_network_statistics(citation: str, max_nodes: int = 100) -> dict[str, Any]:
+    """Get statistical analysis of a citation network.
+
+    Provides metrics about case influence, treatment distribution, and network structure.
+
+    Args:
+        citation: The citation to analyze
+        max_nodes: Maximum number of nodes to include in analysis
+
+    Returns:
+        Dictionary containing:
+        - citation_count: How many cases cite this case
+        - treatment_distribution: Breakdown of how citing cases treat this case
+        - temporal_distribution: Citations over time
+        - court_distribution: Which courts cite this case most
+        - influence_score: Composite score of case influence
+    """
+    return await get_network_statistics_impl(citation, max_nodes)
+
+
+@network_server.tool()
+async def visualize_citation_network(
+    citation: str,
+    diagram_type: str = "flowchart",
+    direction: str = "TB",
+    color_by_treatment: bool = True,
+    max_nodes: int = 50,
+) -> dict[str, Any]:
+    """Generate a Mermaid diagram visualization of a citation network.
+
+    Creates beautiful visualizations perfect for Obsidian notes and academic papers.
+    Supports multiple diagram types including flowcharts, graphs, and timelines.
+
+    Args:
+        citation: The citation to visualize
+        diagram_type: Type of diagram ("flowchart", "graph", "timeline", or "all")
+        direction: Diagram direction - "TB" (top-bottom), "LR" (left-right), "BT", "RL"
+        color_by_treatment: Whether to color-code by treatment type
+        max_nodes: Maximum number of nodes to include
+
+    Returns:
+        Dictionary containing:
+        - mermaid_syntax: The Mermaid diagram code (ready to paste in Obsidian)
+        - summary_stats: Text summary of the network
+        - node_count: Number of nodes in visualization
+        - edge_count: Number of edges in visualization
+    """
+    return await visualize_citation_network_impl(
+        citation, diagram_type, direction, color_by_treatment, max_nodes
+    )
+
+
+@network_server.tool()
+async def generate_citation_report(
+    citation: str,
+    include_diagram: bool = True,
+    include_statistics: bool = True,
+    treatment_focus: list[str] | None = None,
+    max_nodes: int = 50,
+) -> dict[str, Any]:
+    """Generate a comprehensive citation analysis report.
+
+    Creates a complete markdown report with visualizations, statistics, and analysis.
+    Perfect for inclusion in legal research notes and academic papers.
+
+    Args:
+        citation: The citation to analyze
+        include_diagram: Whether to include Mermaid diagram
+        include_statistics: Whether to include detailed statistics
+        treatment_focus: Optional list of treatments to highlight (e.g., ["overruled", "questioned"])
+        max_nodes: Maximum number of cases to include
+
+    Returns:
+        Dictionary containing:
+        - markdown_report: Complete markdown-formatted report
+        - mermaid_diagram: Mermaid syntax (if include_diagram=True)
+        - statistics: Detailed statistics (if include_statistics=True)
+    """
+    return await generate_citation_report_impl(
+        citation, include_diagram, include_statistics, treatment_focus, max_nodes
+    )
