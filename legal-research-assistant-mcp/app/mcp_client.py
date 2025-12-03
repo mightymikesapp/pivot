@@ -15,8 +15,8 @@ from typing import Any
 
 import httpx
 
-from app.logging_utils import log_event, log_operation
 from app.config import Settings, get_settings
+from app.logging_utils import log_event, log_operation
 
 logger = logging.getLogger(__name__)
 

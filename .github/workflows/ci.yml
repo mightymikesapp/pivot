@@ -11,6 +11,9 @@ permissions:
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: legal-research-assistant-mcp
 
     steps:
       - name: Checkout repository

@@ -1,16 +1,14 @@
 """Advanced tests for CourtListener client covering caching and retries."""
 
-import json
-import time
 import logging
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch, mock_open
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
-from app.mcp_client import CourtListenerClient, get_client
 from app.config import Settings
+from app.mcp_client import CourtListenerClient, get_client
 
 
 pytestmark = pytest.mark.integration
