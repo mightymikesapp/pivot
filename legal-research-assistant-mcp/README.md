@@ -459,11 +459,11 @@ If you use this tool in academic work, please cite:
 ```bibtex
 @software{legal_research_assistant_mcp,
   title = {Legal Research Assistant MCP},
-  author = {Your Name},
+  author = {Mike Sapp},
   year = {2025},
   description = {Advanced legal research MCP with treatment analysis,
                  citation networks, and quote verification},
-  url = {https://github.com/yourusername/legal-research-assistant-mcp}
+  url = {https://github.com/mightymikesapp/pivot/legal-research-assistant-mcp}
 }
 ```
 
