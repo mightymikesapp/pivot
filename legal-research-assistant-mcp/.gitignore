@@ -25,3 +25,5 @@ dist/
 *.swo
 *.swn
 .DS_Store
+data/
+__pycache__/
