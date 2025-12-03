@@ -2,6 +2,7 @@
 
 import json
 import time
+import logging
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch, mock_open
 
@@ -101,12 +102,6 @@ async def test_cache_read_expired(client):
     # Mock time to be in the future
     # We need to mock time.time()
     with patch("time.time") as mock_time:
-        # First call is when we check expiry.
-        # We need to make sure we set it > mtime + ttl
-        # The file was just written, so its mtime is "now".
-        # We simulate "now" as time.time() called inside write_cache (but write_cache doesn't call time.time, FS does)
-        # So we just need to make sure the mocked time returned is large enough.
-
         # Get actual mtime of file
         p = client._cache_path(cache_key)
         mtime = p.stat().st_mtime
@@ -135,10 +130,6 @@ async def test_cache_read_error(client):
 @pytest.mark.asyncio
 async def test_write_cache_error(client):
     """Test error handling during cache write."""
-    # Mock open to raise OSError via patching pathlib.Path.open
-    # However, since we import Path in mcp_client, we should patch where it's used or on the instance.
-    # _write_cache calls path.open(). 'path' is a Path object.
-
     with patch.object(Path, "open", side_effect=OSError("Disk full")):
         client._write_cache("key", {"data": 1})
         # Should not raise
@@ -186,3 +177,62 @@ async def test_get_opinion_caching(client):
     result2 = await client.get_opinion(opinion_id)
     assert result2 == data
     client.client.request.assert_not_called()
+
+@pytest.mark.asyncio
+async def test_find_citing_cases_all_fail(client):
+    """Test find_citing_cases when all attempts fail."""
+    # Mock requests to fail (return empty or error)
+
+    # Attempt 1: Empty results
+    r1 = MagicMock()
+    r1.status_code = 200
+    r1.json.return_value = {"results": []}
+    r1.raise_for_status = MagicMock()
+
+    # Attempt 2: Error
+    r2 = MagicMock()
+    r2.status_code = 404
+
+    # Mocking _request isn't enough because find_citing_cases calls client.get directly for the first check?
+    # No, find_citing_cases in my refactored code (if I recall) calls _request?
+    # Let's check mcp_client.py content.
+    # Ah, in find_citing_cases, I saw `response = await self.client.get(...)` then `response = await self._request(...)` in the original code?
+    # Wait, I refactored it to use `_request`.
+    # Let's double check `app/mcp_client.py` content via `grep`.
+
+    # In the refactored `mcp_client.py`, `find_citing_cases` calls `_request`.
+
+    client.client.request.side_effect = [r1, httpx.HTTPError("Fail")]
+
+    result = await client.find_citing_cases("123 U.S. 456")
+    assert result == []
+
+@pytest.mark.asyncio
+async def test_init_no_api_key(tmp_path, caplog):
+    """Test initialization without API key logs warning."""
+    settings_no_key = Settings(
+        courtlistener_api_key="",
+        courtlistener_cache_dir=tmp_path / "cache"
+    )
+    with caplog.at_level(logging.WARNING):
+        CourtListenerClient(settings_no_key)
+        assert "No CourtListener API key found" in caplog.text
+
+@pytest.mark.asyncio
+async def test_lookup_citation_fallback(client):
+    """Test lookup_citation fallback logic when no exact match."""
+    # Mock response with results but no exact citation match
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "results": [
+            {"citation": ["Other Citation"], "caseName": "Oldest Case"},
+            {"citation": ["Another Citation"], "caseName": "Newer Case"}
+        ]
+    }
+    mock_response.raise_for_status = MagicMock()
+    client.client.request.return_value = mock_response
+
+    result = await client.lookup_citation("Target Citation")
+    # Should return the first result (oldest)
+    assert result["caseName"] == "Oldest Case"
