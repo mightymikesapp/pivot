@@ -15,6 +15,7 @@ from app.analysis.quote_matcher import QuoteMatcher
 from app.logging_config import tool_logging
 from app.logging_utils import log_event, log_operation
 from app.mcp_client import get_client
+from app.mcp_types import ToolPayload
 
 logger = logging.getLogger(__name__)
 
@@ -402,7 +403,7 @@ async def batch_verify_quotes_impl(
 
 
 # Create verification tools server
-verification_server = FastMCP(
+verification_server: FastMCP[ToolPayload] = FastMCP(
     name="Quote Verification Tools",
     instructions="Tools for verifying legal quotes against their cited sources",
 )

@@ -11,9 +11,10 @@ from fastmcp import FastMCP
 from app.cache import CacheType, get_cache_manager
 from app.logging_config import tool_logging
 from app.logging_utils import log_event
+from app.mcp_types import ToolPayload
 
 # Create a sub-server for cache tools
-cache_server = FastMCP("Cache Tools")
+cache_server: FastMCP[ToolPayload] = FastMCP("Cache Tools")
 logger = logging.getLogger(__name__)
 
 
