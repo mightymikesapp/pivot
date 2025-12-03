@@ -21,14 +21,20 @@ def mock_client(mocker):
     }
 
     # Mock find_citing_cases
-    client_mock.find_citing_cases.return_value = [
-        {
-            "caseName": "Planned Parenthood v. Casey",
-            "citation": ["505 U.S. 833"],
-            "dateFiled": "1992-06-29",
-            "opinions": [{"id": 123}]
-        }
-    ]
+    client_mock.find_citing_cases.return_value = {
+        "results": [
+            {
+                "caseName": "Planned Parenthood v. Casey",
+                "citation": ["505 U.S. 833"],
+                "dateFiled": "1992-06-29",
+                "opinions": [{"id": 123}],
+            }
+        ],
+        "warnings": [],
+        "failed_requests": [],
+        "incomplete_data": False,
+        "confidence": 1.0,
+    }
 
     # Mock get_opinion_full_text
     client_mock.get_opinion_full_text.return_value = "This case affirms the essential holding of Roe."
@@ -110,7 +116,13 @@ async def test_get_citing_cases_with_filter(mock_client, mocker):
     # But since the implementation iterates over results from find_citing_cases,
     # we need find_citing_cases to return 2 items, and classify_treatment to be called twice.
 
-    mock_client.find_citing_cases.return_value = ["case1", "case2"]
+    mock_client.find_citing_cases.return_value = {
+        "results": ["case1", "case2"],
+        "warnings": [],
+        "failed_requests": [],
+        "incomplete_data": False,
+        "confidence": 1.0,
+    }
 
     mocker.patch("app.tools.treatment.classifier.classify_treatment", side_effect=[positive_analysis, negative_analysis])
 

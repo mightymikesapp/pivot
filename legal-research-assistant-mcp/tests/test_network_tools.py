@@ -40,7 +40,13 @@ def mock_client_funcs(mocker):
             "dateFiled": "2020-01-01"
         }
     ]
-    client_mock.find_citing_cases.return_value = citing_cases
+    client_mock.find_citing_cases.return_value = {
+        "results": citing_cases,
+        "warnings": [],
+        "failed_requests": [],
+        "incomplete_data": False,
+        "confidence": 1.0,
+    }
 
     return client_mock
 
@@ -80,7 +86,13 @@ async def test_build_citation_network_error(mock_client_funcs):
 @pytest.mark.asyncio
 async def test_build_citation_network_no_citing(mock_client_funcs):
     """Test handling no citing cases."""
-    mock_client_funcs.find_citing_cases.return_value = []
+    mock_client_funcs.find_citing_cases.return_value = {
+        "results": [],
+        "warnings": ["No citing cases were found across all query attempts."],
+        "failed_requests": [],
+        "incomplete_data": True,
+        "confidence": 0.5,
+    }
 
     result = await build_citation_network_impl("100 U.S. 100")
 

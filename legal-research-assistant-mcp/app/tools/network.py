@@ -59,9 +59,10 @@ async def build_citation_network_impl(
             }
 
         # Get citing cases
-        citing_cases = await client.find_citing_cases(
+        citing_cases_result = await client.find_citing_cases(
             citation, limit=max_nodes, request_id=request_id
         )
+        citing_cases = citing_cases_result["results"]
 
         log_event(
             logger,
@@ -70,6 +71,10 @@ async def build_citation_network_impl(
             request_id=request_id,
             query_params=query_params,
             citation_count=len(citing_cases),
+            extra_context={
+                "warnings": citing_cases_result.get("warnings", []),
+                "incomplete_data": citing_cases_result.get("incomplete_data", False),
+            },
             event="citation_lookup",
         )
 
@@ -91,6 +96,9 @@ async def build_citation_network_impl(
                     "total_edges": 0,
                     "message": "No citing cases found",
                 },
+                "warnings": citing_cases_result.get("warnings", []),
+                "failed_requests": citing_cases_result.get("failed_requests", []),
+                "incomplete_data": citing_cases_result.get("incomplete_data", True),
             }
 
         # Optionally include treatment analysis
@@ -153,6 +161,9 @@ async def build_citation_network_impl(
                 for edge in network.edges
             ],
             "statistics": statistics,
+            "warnings": citing_cases_result.get("warnings", []),
+            "failed_requests": citing_cases_result.get("failed_requests", []),
+            "incomplete_data": citing_cases_result.get("incomplete_data", False),
         }
 
 
