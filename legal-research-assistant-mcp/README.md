@@ -11,9 +11,10 @@ This server adds treatment analysis, citation networks, quote verification, and 
 - **Automated case validity checking** - Analyzes treatment signals from citing cases
 - **12 negative signal patterns** (overruled, abrogated, reversed, etc.)
 - **11 positive signal patterns** (followed, affirmed, adopted, etc.)
-- **Two-pass analysis** - Smart full-text fetching for better accuracy
+- **Two-pass analysis** - Smart full-text fetching strategy (always, smart, negative_only, never)
 - **Confidence scoring** (0-1 scale) with detailed warnings
 - **Context extraction** showing relevant excerpts
+- **Research request ID tracking** - Correlation IDs for debugging and tracing
 
 ### ✅ Quote Verification
 **Maintain academic integrity** - Verify that quotes accurately appear in cited cases.
@@ -24,7 +25,8 @@ This server adds treatment analysis, citation networks, quote verification, and 
 - **Batch verification** - Check multiple quotes at once
 - **HTML text normalization** - Handles various text formats
 - **Difference detection** - Shows specific discrepancies
-- **Pinpoint citation validation**
+- **Pinpoint citation support** - Page/section/paragraph detection and alignment
+- **Quote grounding information** - Context and relevance metrics
 
 ### ✅ Citation Network Visualization
 **Visualize precedent relationships** - Build and analyze citation graphs with beautiful Mermaid diagrams.
@@ -35,15 +37,22 @@ This server adds treatment analysis, citation networks, quote verification, and 
   - **Graphs** - Simplified network views
   - **Timelines** - Citations over time
 - **Treatment-based coloring** - Visual distinction of positive/negative signals
-- **Influence scoring** - Identify most important cases
-- **Statistical analysis** - Temporal and court distribution
+- **Advanced analytics** - PageRank, eigenvector centrality, community detection
+- **Influence scoring** - Identify most important cases with customizable weighting
+- **Statistical analysis** - Temporal and court distribution with hierarchical court weighting
+- **Export formats** - GraphML and JSON for external analysis tools
 - **Obsidian-ready** - Copy-paste Mermaid syntax directly into notes
 - **Comprehensive reports** - Markdown-formatted with diagrams and statistics
 
-### 🚧 Semantic Search (Planned)
-- Find cases by conceptual similarity
-- Cross-jurisdictional pattern matching
-- Analogous reasoning detection
+### ✅ Semantic Search
+**Find cases by conceptual similarity** - Vector-based intelligent search across legal opinions.
+
+- **Smart Scout strategy** - Broad keyword search → full text fetching → semantic re-ranking
+- **Vector indexing** - Persistent embeddings using sentence-transformers
+- **Batch processing** - Efficient bulk case processing with rate-limit awareness
+- **Deduplication** - Intelligent handling of existing documents
+- **Customizable persistence** - Store embeddings locally or in memory
+- **Integration with existing tools** - Combine with citation networks and treatment analysis
 
 ## 🏗️ Architecture
 
@@ -57,14 +66,16 @@ This MCP uses the **Wrapper/Orchestrator Pattern**, calling the CourtListener AP
 │  ✓ Treatment Analysis                  │
 │  ✓ Citation Networks                   │
 │  ✓ Quote Verification                  │
+│  ✓ Semantic Search                     │
+│  ✓ Research Pipelines                  │
 │  ✓ Mermaid Visualizations              │
-│  ○ Semantic Search (planned)           │
 └──────────┬──────────────────────────────┘
            │ calls ↓
-┌──────────▼──────────────────────────────┐
-│  CourtListener API (Free Law Project)   │
-│  (Data Access Layer)                    │
-└─────────────────────────────────────────┘
+┌──────────▼─────────────────┐  ┌──────────────────────┐
+│  CourtListener API         │  │  Vector Store        │
+│  (Free Law Project)        │  │  (Chromadb)          │
+│  (Data Access Layer)       │  │  (Embeddings/Cache)  │
+└────────────────────────────┘  └──────────────────────┘
 ```
 
 ## 🚀 Quickstart
@@ -100,11 +111,46 @@ uv run python -m app.server
 
 Use `.env.example` as a reference for available settings. Key options include:
 
-- `COURT_LISTENER_API_KEY` / `COURTLISTENER_API_KEY` aliases for the CourtListener API key
-- Connection, timeout, and retry settings for CourtListener requests
-- Cache directories/TTLs for CourtListener responses and citation networks
-- Logging level/format/date configuration
-- Analysis limits such as confidence thresholds, citing-case limits, full-text fetch counts, and network depth
+### API & Authentication
+- `COURT_LISTENER_API_KEY` / `COURTLISTENER_API_KEY` - CourtListener API key (aliases supported)
+
+### CourtListener API Settings
+- `COURTLISTENER_BASE_URL` - API base URL (default: https://www.courtlistener.com/api/rest/v3)
+- `COURTLISTENER_TIMEOUT` - Request timeout in seconds (default: 30)
+- `COURTLISTENER_MAX_RETRIES` - Maximum retry attempts (default: 3)
+- `COURTLISTENER_RETRY_BACKOFF_FACTOR` - Exponential backoff multiplier (default: 2)
+
+### Treatment Analysis Settings
+- `FETCH_FULL_TEXT_STRATEGY` - Full-text fetching strategy: `always`, `smart` (default), `negative_only`, `never`
+- `MAX_FULL_TEXT_FETCHES` - Maximum full-text fetches per analysis (default: 5)
+- `CONFIDENCE_THRESHOLD` - Minimum confidence score (default: 0.5)
+- `CITING_CASE_LIMIT` - Maximum citing cases to analyze per treatment check (default: 100)
+
+### Citation Network Settings
+- `NETWORK_MAX_DEPTH` - Maximum recursion depth for network building (default: 2)
+- `NETWORK_MAX_NODES` - Maximum nodes in citation network (default: 100)
+- `ENABLE_ADVANCED_METRICS` - Compute PageRank and centrality (default: true)
+- `ENABLE_COMMUNITY_DETECTION` - Use graph clustering (default: true)
+
+### Semantic Search Settings
+- `SEMANTIC_SEARCH_ENABLED` - Enable vector-based search (default: true)
+- `SEMANTIC_SEARCH_PERSISTENCE_PATH` - Directory for embeddings storage (default: `.cache/embeddings`)
+- `SEMANTIC_SEARCH_MODEL` - Embedding model name (default: `all-MiniLM-L6-v2`)
+- `SEMANTIC_SEARCH_BATCH_SIZE` - Batch size for vector indexing (default: 32)
+
+### Cache Settings
+- `CACHE_ENABLED` - Enable caching (default: true)
+- `CACHE_DIRECTORY` - Cache storage path (default: `.cache`)
+- `CACHE_METADATA_TTL` - Metadata cache TTL in seconds (default: 86400, 24 hours)
+- `CACHE_TEXT_TTL` - Full-text cache TTL in seconds (default: 604800, 7 days)
+- `CACHE_SEARCH_TTL` - Search result cache TTL in seconds (default: 259200, 3 days)
+- `CACHE_MAX_SIZE_MB` - Maximum cache size in MB (default: 1000)
+
+### Logging Settings
+- `LOG_LEVEL` - Logging level: DEBUG, INFO, WARNING, ERROR (default: INFO)
+- `LOG_FORMAT` - Log format: simple, detailed, json (default: detailed)
+- `LOG_DATE_FORMAT` - Date format in logs (default: `%Y-%m-%d %H:%M:%S`)
+- `LOG_INCLUDE_REQUEST_ID` - Include correlation IDs in logs (default: true)
 
 After copying the template, adjust values in `.env` to match your environment and preferences.
 
@@ -250,6 +296,61 @@ Provides detailed statistical analysis of a citation network.
 #### `filter_citation_network(citation: str, treatments: list[str], min_confidence: float) → dict`
 Builds a filtered network showing only specific treatment types.
 
+### Semantic Search Tools
+
+#### `semantic_search(query: str, jurisdiction: str = None, limit: int = 20, rerank: bool = True) → dict`
+Finds cases by conceptual similarity using vector embeddings and optional semantic re-ranking.
+
+**Example:**
+```python
+results = await semantic_search(
+    query="liability for failure to warn about product defects",
+    jurisdiction="U.S.",
+    limit=15,
+    rerank=True
+)
+```
+
+**Returns:**
+```json
+{
+  "query": "liability for failure to warn about product defects",
+  "results": [
+    {
+      "citation": "456 F.3d 789",
+      "case_name": "Product Liability Corp v. Consumers",
+      "similarity_score": 0.89,
+      "snippet": "...failure to provide adequate warnings...",
+      "jurisdiction": "2nd Circuit"
+    }
+  ],
+  "vector_store_stats": {
+    "total_cases_indexed": 5234,
+    "search_method": "semantic_rerank"
+  }
+}
+```
+
+#### `purge_memory() → dict`
+Clears the local vector store and resets embeddings cache.
+
+#### `get_library_stats() → dict`
+Returns statistics about the vector store (indexed cases, persistence path, etc.).
+
+### Cache Management Tools
+
+#### `cache_stats() → dict`
+Reports cache hit rates, miss rates, and storage size by cache type.
+
+**Example:**
+```python
+stats = await cache_stats()
+# Returns hit/miss rates for metadata, text, and search caches
+```
+
+#### `cache_clear(cache_type: str = "all") → dict`
+Clears cache by type: `metadata`, `text`, `search`, or `all`.
+
 ## 📊 Usage Examples
 
 ### Example 1: Check Case Validity
@@ -326,6 +427,89 @@ with open("roe_citation_report.md", "w") as f:
     f.write(report["markdown_report"])
 ```
 
+### Example 5: Semantic Search with Re-ranking
+
+```python
+from app.tools.search import semantic_search
+
+# Find conceptually similar cases
+results = await semantic_search(
+    query="employment discrimination based on age",
+    jurisdiction="U.S.",
+    limit=20,
+    rerank=True  # Re-rank by semantic similarity
+)
+
+for result in results["results"][:5]:
+    print(f"📄 {result['case_name']} ({result['citation']})")
+    print(f"   Similarity: {result['similarity_score']:.0%}")
+    print(f"   {result['snippet']}\n")
+```
+
+### Example 6: Advanced Network Analysis with Metrics
+
+```python
+from app.tools.network import build_citation_network, get_network_statistics
+
+# Build network with advanced metrics enabled
+network = await build_citation_network(
+    citation="410 U.S. 113",
+    max_nodes=100,
+    enable_advanced_metrics=True,
+    enable_community_detection=True,
+    weight_by_court_level=True,
+    weight_by_treatment_polarity=True
+)
+
+# Get detailed statistics
+stats = await get_network_statistics(citation="410 U.S. 113")
+
+print(f"Most influential cases:")
+for case in stats["influence_ranking"][:5]:
+    print(f"  • {case['case_name']} (PageRank: {case['pagerank']:.3f})")
+
+print(f"\nCommunity Clusters: {len(stats['communities'])}")
+for i, community in enumerate(stats['communities']):
+    print(f"  Cluster {i+1}: {len(community['nodes'])} cases")
+```
+
+### Example 7: Run Full Research Pipeline
+
+```python
+from app.tools.research import run_research_pipeline
+
+# Execute comprehensive research workflow
+pipeline_result = await run_research_pipeline(
+    primary_citation="410 U.S. 113",
+    quotes_to_verify=[
+        "the right of privacy",
+        "State criminal abortion laws"
+    ],
+    max_network_depth=3,
+    max_network_nodes=50,
+    semantic_search_enabled=True
+)
+
+print(f"Treatment: {pipeline_result['treatment_analysis']['overall_treatment']}")
+print(f"Quote Verification: {pipeline_result['quote_verification']['verified_count']}/{len(quotes_to_verify)}")
+print(f"Network Nodes: {len(pipeline_result['citation_network']['nodes'])}")
+```
+
+### Example 8: Manage Cache and Performance
+
+```python
+from app.tools.cache_tools import cache_stats, cache_clear
+
+# Check cache performance
+stats = await cache_stats()
+print(f"Cache Hit Rate: {stats['metadata_hits']/stats['metadata_total']:.0%}")
+print(f"Cache Size: {stats['total_size_mb']:.1f} MB")
+
+# Clear cache if needed
+if stats['total_size_mb'] > 500:
+    await cache_clear("search")  # Clear search embeddings only
+```
+
 ## 🧪 Testing
 
 Run the automated suites with uv:
@@ -337,6 +521,49 @@ uv run pytest
 # Full suite including integration checks (requires COURTLISTENER_API_KEY)
 uv run pytest --run-integration
 ```
+
+## 🚀 Advanced Features
+
+### Two-Pass Treatment Analysis
+
+The treatment analyzer uses a smart two-pass strategy for efficiency:
+
+1. **First Pass (Fast)** - Analyze citing case metadata and available snippet text
+2. **Second Pass (Smart)** - Conditionally fetch full text based on strategy:
+   - `always` - Always fetch full text for all citing cases
+   - `smart` - Fetch only for cases with negative signals (default)
+   - `negative_only` - Fetch for negative signals, analyze positive cases by snippet
+   - `never` - Never fetch, rely on snippet analysis only
+
+**Smart fetching benefits:** Reduces API calls and latency while improving confidence scores for boundary cases.
+
+### Network Weighting & Customization
+
+Citation networks support multiple weighting strategies:
+
+- **Court-level weighting** - Higher weights for SCOTUS → Circuit → District (e.g., SCOTUS=2.0x)
+- **Treatment polarity weighting** - Positive treatments amplified, negative treatments dampened
+- **Custom color palettes** - Hex-based court and treatment coloring
+- **Community detection** - Automatic clustering using greedy modularity algorithms
+- **Export formats** - GraphML (network analysis tools) and JSON (web visualization)
+
+### Request ID Tracking & Correlation
+
+All operations include unique request IDs for debugging:
+- Correlation IDs propagated through nested tool calls
+- Structured logging with request context
+- Error traces tied to specific operations
+- Performance metrics per request
+
+### Caching & Resilience
+
+Intelligent multi-layer caching:
+- **Metadata cache** - Case names, citations, court info (24h TTL)
+- **Full-text cache** - Opinion text (7d TTL)
+- **Search cache** - Query results (3d TTL)
+- **Adaptive retry logic** - Exponential backoff with jitter
+- **Partial results** - Returns best-effort data with warnings if API limits hit
+- **Rate-limit awareness** - Batch processing respects API quotas
 
 ## 📁 Project Structure
 
@@ -354,19 +581,21 @@ legal-research-assistant-mcp/
 │   │   ├── cache_tools.py    # Cache management helpers
 │   │   ├── network.py        # Citation network tools
 │   │   ├── research.py       # Research workflow helpers
-│   │   ├── search.py         # Opinion search helpers
+│   │   ├── search.py         # Semantic search tools
 │   │   ├── treatment.py      # Treatment analysis tools
 │   │   └── verification.py   # Quote verification tools
 │   └── analysis/             # Core analysis modules
 │       ├── citation_network.py       # Network graph construction
 │       ├── mermaid_generator.py      # Mermaid diagram generation
 │       ├── quote_matcher.py          # Quote matching with fuzzy search
+│       ├── semantic_search.py        # Vector-based similarity search
 │       └── treatment_classifier.py   # Signal detection & classification
-├── tests/                   # Pytest suites
+├── tests/                   # Pytest suites (285+ test functions)
 │   ├── test_cache.py
 │   ├── test_mcp_client.py
 │   ├── test_network_tools.py
 │   ├── test_search_tool.py
+│   ├── test_semantic_search.py
 │   └── ...
 ├── pyproject.toml           # Python package configuration
 ├── .env.example             # Environment template
@@ -396,48 +625,68 @@ legal-research-assistant-mcp/
 
 ## 🗺️ Roadmap
 
+### ✅ Completed Features
+
 - [x] Project scaffolding and setup
-- [x] CourtListener API integration
-- [x] Treatment analysis with signal detection
-- [x] Two-pass analysis with smart full-text fetching
-- [x] Quote verification with fuzzy matching
-- [x] Citation network construction
-- [x] Mermaid diagram generation
-- [x] Comprehensive markdown reports
+- [x] CourtListener API integration with authentication & resilience
+- [x] Treatment analysis with signal detection (12 negative, 11 positive patterns)
+- [x] Two-pass analysis with smart full-text fetching strategy
+- [x] Quote verification with fuzzy matching and pinpoint citations
+- [x] Citation network construction with recursive depth control
+- [x] Mermaid diagram generation (flowchart, graph, timeline)
+- [x] Comprehensive markdown reports with statistics
+- [x] Repository hygiene and configuration centralization
+- [x] Structured logging with correlation IDs and request tracking
+- [x] Multi-layer caching with configurable TTLs
+- [x] Retry/backoff policies with partial result support
+- [x] Advanced network analytics (PageRank, centrality, community detection)
+- [x] Export formats (GraphML, JSON)
+- [x] Research orchestration tools (`run_research_pipeline`, `issue_map`)
+- [x] Semantic search with vector embeddings and re-ranking
+- [x] Cache management tools
+- [x] Comprehensive test coverage (285+ tests)
 
-### 🎯 High-impact next tasks
+### 🎯 High-priority improvements
 
-1) **Reliability and hygiene**
-- [ ] Tighten repository hygiene (.gitignore coverage, clearer defaults)
-- [ ] Centralize configuration with .env/env vars for CourtListener, timeouts, retries, and cache controls
-- [ ] Implement structured logging with correlation/request metadata and tool context
+1) **Semantic Search Enhancements**
+- [ ] Multi-model ensemble for embedding quality
+- [ ] Hybrid search (keyword + semantic ranking)
+- [ ] Custom embedding fine-tuning on legal corpora
+- [ ] Similarity threshold optimization
 
-2) **Quality gates and repeatability**
-- [ ] Add CI pipeline running `pytest` (fast unit suite), `ruff`, `mypy`, and coverage thresholds
-- [ ] Split tests into fast unit checks vs. flagged integration suites for external calls
+2) **Network Visualization Improvements**
+- [ ] Interactive web-based visualizations
+- [ ] Real-time network updates
+- [ ] Advanced filtering UI (by court, date range, treatment type)
+- [ ] Node sizing by authority/influence
 
-3) **Resilience for CourtListener and other external calls**
-- [ ] Add caching with sensible TTLs for case metadata and query responses
-- [ ] Wrap external calls with timeouts and retry/backoff policies; surface partial results with warnings
+3) **User Experience**
+- [ ] CLI interface for common workflows
+- [ ] Example scripts for each use case
+- [ ] Jupyter notebook demonstrations
+- [ ] Performance benchmarking suite
 
-4) **User-facing research helpers**
-- [ ] Build end-to-end research workflow helpers (e.g., `run_research_pipeline`, `issue_map`)
-- [ ] Extend citation verification with grounding checks and better error surfacing
+4) **Expanded Research Capabilities**
+- [ ] Batch processing pipelines for bulk research
+- [ ] Issue mapping with cross-citation analysis
+- [ ] Precedent evolution timelines
+- [ ] Comparative case analysis
 
-5) **Authority-aware analytics and visualization**
-- [ ] Add weighted/clustered citation graph analytics (authority weighting, clustering, PageRank/centrality)
-- [ ] Enhance visualizations and export formats (court/treatment coloring, node sizing, GraphML/JSON exports)
+5) **Integration & Export**
+- [ ] Obsidian plugin development
+- [ ] Export to citation management tools (Zotero, Mendeley)
+- [ ] Document upload and OCR support
+- [ ] Multi-format export (PDF, Word, LaTeX)
 
 ### 📈 Longer-horizon items
 
-- [ ] Document uploads for user-provided sources
-- [ ] Generative helpers (memo and outline builders)
-- [ ] Semantic similarity search across corpora
-- [ ] Obsidian plugin integration
-- [ ] Batch processing pipelines
 - [ ] Machine learning treatment classification
-- [ ] Multi-jurisdiction support
-- [ ] Export to citation management tools
+- [ ] Generative helpers (memo and outline builders)
+- [ ] Multi-jurisdiction support (state courts, international)
+- [ ] Batch ML model training on case outcomes
+- [ ] Predictive analytics for case law evolution
+- [ ] Natural language policy analysis
+- [ ] Advanced visualization (3D networks, AR support)
 
 ## 🤝 Contributing
 
