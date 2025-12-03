@@ -6,6 +6,7 @@ API directly since MCP-to-MCP communication patterns are still evolving.
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import time
@@ -58,6 +59,22 @@ class CourtListenerClient:
         if self.api_key:
             headers["Authorization"] = f"Token {self.api_key}"
         return headers
+
+    def _normalize_params(self, params: dict[str, Any]) -> str:
+        def normalize_value(value: Any) -> Any:
+            if isinstance(value, str):
+                return value.strip().lower()
+            if isinstance(value, (list, tuple)):
+                return [normalize_value(v) for v in value]
+            return value
+
+        normalized = {k: normalize_value(v) for k, v in params.items() if v not in (None, "")}
+        return json.dumps(normalized, sort_keys=True, separators=(",", ":"))
+
+    def _build_cache_key(self, prefix: str, params: dict[str, Any]) -> str:
+        normalized = self._normalize_params(params)
+        digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+        return f"{prefix}_{digest}"
 
     def _cache_path(self, key: str, suffix: str = "json") -> Path:
         return self.cache_dir / f"{key}.{suffix}"
@@ -185,6 +202,11 @@ class CourtListenerClient:
             query_params=params,
             event="courtlistener_search",
         ):
+            cache_key = self._build_cache_key("search_opinions", params)
+            if self.settings.courtlistener_search_cache_enabled:
+                cached_result = self._read_cache(cache_key)
+                if cached_result is not None:
+                    return cached_result
             try:
                 response = await self._request(
                     "GET",
@@ -193,6 +215,8 @@ class CourtListenerClient:
                     headers=self._get_headers(),
                 )
                 result = response.json()
+                if self.settings.courtlistener_search_cache_enabled:
+                    self._write_cache(cache_key, result)
                 log_event(
                     logger,
                     "Opinion search completed",
@@ -451,6 +475,13 @@ class CourtListenerClient:
             query_params={"citation": citation, "limit": limit},
             event="find_citing_cases",
         ):
+            cache_key = self._build_cache_key(
+                "find_citing_cases", {"citation": citation, "limit": limit}
+            )
+            if self.settings.courtlistener_citing_cache_enabled:
+                cached_results = self._read_cache(cache_key)
+                if cached_results is not None:
+                    return cached_results
             for query in query_attempts:
                 params = {
                     "q": query,
@@ -467,6 +498,8 @@ class CourtListenerClient:
                     data = response.json()
                     results = data.get("results", [])
                     if results:
+                        if self.settings.courtlistener_citing_cache_enabled:
+                            self._write_cache(cache_key, results)
                         log_event(
                             logger,
                             "Found citing cases",

@@ -207,6 +207,64 @@ async def test_find_citing_cases_all_fail(client):
     result = await client.find_citing_cases("123 U.S. 456")
     assert result == []
 
+
+@pytest.mark.asyncio
+async def test_search_opinions_caching(client):
+    """Test that search_opinions caches responses when enabled."""
+
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"results": [{"id": 1}]}
+    mock_response.raise_for_status = MagicMock()
+
+    client._request = AsyncMock(return_value=mock_response)
+
+    first = await client.search_opinions(q="Roe v. Wade", limit=5)
+    assert first["results"][0]["id"] == 1
+    assert client._request.await_count == 1
+
+    client._request.reset_mock()
+    second = await client.search_opinions(q="Roe v. Wade", limit=5)
+    assert second == first
+    client._request.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_search_opinions_cache_disabled(client):
+    """Test that search caching can be disabled via settings."""
+
+    client.settings.courtlistener_search_cache_enabled = False
+
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"results": [{"id": 2}]}
+    mock_response.raise_for_status = MagicMock()
+
+    client._request = AsyncMock(return_value=mock_response)
+
+    await client.search_opinions(q="Brown v. Board", limit=3)
+    await client.search_opinions(q="Brown v. Board", limit=3)
+
+    assert client._request.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_find_citing_cases_caching(client):
+    """Test caching for find_citing_cases results."""
+
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"results": [{"case_name": "Test"}]}
+    mock_response.raise_for_status = MagicMock()
+
+    client._request = AsyncMock(return_value=mock_response)
+
+    first = await client.find_citing_cases("410 U.S. 113", limit=10)
+    assert first == [{"case_name": "Test"}]
+    assert client._request.await_count == 1
+
+    client._request.reset_mock()
+    second = await client.find_citing_cases("410 U.S. 113", limit=10)
+    assert second == first
+    client._request.assert_not_awaited()
+
 @pytest.mark.asyncio
 async def test_init_no_api_key(tmp_path, caplog):
     """Test initialization without API key logs warning."""
