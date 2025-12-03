@@ -1,5 +1,6 @@
 """Tests for the MCP Client."""
 
+import asyncio
 from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -264,31 +265,33 @@ async def test_retry_and_backoff_for_rate_limits(monkeypatch):
     assert sleep_durations[0] >= settings.courtlistener_retry_backoff
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("status_code", [400, 401, 404])
-async def test_client_errors_not_retried(status_code, monkeypatch):
+def test_client_errors_not_retried(status_code, monkeypatch):
     """Client errors should not trigger retries."""
 
-    settings = Settings(courtlistener_api_key="token", courtlistener_retry_attempts=5)
-    client = CourtListenerClient(settings)
+    async def _run_test():
+        settings = Settings(courtlistener_api_key="token", courtlistener_retry_attempts=5)
+        client = CourtListenerClient(settings)
 
-    error = httpx.HTTPStatusError(
-        "client error",
-        request=httpx.Request("GET", "search/"),
-        response=httpx.Response(status_code, request=httpx.Request("GET", "search/")),
-    )
+        error = httpx.HTTPStatusError(
+            "client error",
+            request=httpx.Request("GET", "search/"),
+            response=httpx.Response(status_code, request=httpx.Request("GET", "search/")),
+        )
 
-    request_mock = AsyncMock(side_effect=error)
-    client.client.request = request_mock
+        request_mock = AsyncMock(side_effect=error)
+        client.client.request = request_mock
 
-    sleep_mock = AsyncMock()
-    monkeypatch.setattr("asyncio.sleep", sleep_mock)
+        sleep_mock = AsyncMock()
+        monkeypatch.setattr("asyncio.sleep", sleep_mock)
 
-    with pytest.raises(httpx.HTTPStatusError):
-        await client._request("GET", "search/")
+        with pytest.raises(httpx.HTTPStatusError):
+            await client._request("GET", "search/")
 
-    assert request_mock.await_count == 1
-    sleep_mock.assert_not_awaited()
+        assert request_mock.await_count == 1
+        sleep_mock.assert_not_awaited()
+
+    asyncio.run(_run_test())
 
 
 def test_timeout_configuration_applied():
