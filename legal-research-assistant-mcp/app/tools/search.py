@@ -8,7 +8,7 @@ This module implements the "Smart Scout" strategy:
 """
 
 import logging
-from typing import Any
+from typing import Any, Optional
 
 from fastmcp import FastMCP
 
@@ -18,9 +18,18 @@ from app.mcp_client import get_client
 # Initialize tool
 search_server = FastMCP("Legal Research Search")
 
-# Initialize vector store
-# Use a data directory in the project root
-vector_store = LegalVectorStore(persistence_path="./data/chroma_db")
+_vector_store: Optional[LegalVectorStore] = None
+
+
+def get_vector_store() -> LegalVectorStore:
+    """Lazily initialize and return the LegalVectorStore instance."""
+    global _vector_store
+
+    if _vector_store is None:
+        # Use a data directory in the project root
+        _vector_store = LegalVectorStore(persistence_path="./data/chroma_db")
+
+    return _vector_store
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +51,7 @@ async def semantic_search(query: str, limit: int = 10) -> dict[str, Any]:
         Dictionary with re-ranked search results and statistics
     """
     client = get_client()
+    vector_store = get_vector_store()
 
     # Step 1: Broad Sweep - Search CourtListener
     # We ask for more results than the user wants (3x) to have a good pool for re-ranking
@@ -157,6 +167,7 @@ def purge_memory() -> str:
 
     Use this to free up disk space or start fresh.
     """
+    vector_store = get_vector_store()
     count_before = vector_store.count()
     vector_store.clear()
     return f"Memory purged. Removed {count_before} cases from local library."
@@ -165,4 +176,5 @@ def purge_memory() -> str:
 @search_server.tool()
 def get_library_stats() -> dict[str, Any]:
     """Get statistics about the local semantic search library."""
+    vector_store = get_vector_store()
     return vector_store.get_stats()
