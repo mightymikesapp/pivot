@@ -1,6 +1,7 @@
 import asyncio
 import inspect
 import sys
+from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -162,7 +163,13 @@ def pytest_pyfunc_call(pyfuncitem):
     testfunction = pyfuncitem.obj
 
     if inspect.iscoroutinefunction(testfunction):
-        asyncio.run(testfunction(**pyfuncitem.funcargs))
+        # Filter out built-in pytest fixtures that shouldn't be passed to the test function
+        func_args = {
+            name: value
+            for name, value in pyfuncitem.funcargs.items()
+            if name in pyfuncitem._fixtureinfo.argnames
+        }
+        asyncio.run(testfunction(**func_args))
         return True
 
     return None
