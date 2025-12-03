@@ -5,31 +5,41 @@ While we call it an MCP client for architectural clarity, it communicates with t
 API directly since MCP-to-MCP communication patterns are still evolving.
 """
 
+import asyncio
+import json
 import logging
-import os
+import time
+from pathlib import Path
 from typing import Any
 
 import httpx
-from dotenv import load_dotenv
 
 from app.logging_utils import log_event, log_operation
 
 logger = logging.getLogger(__name__)
+from app.config import Settings, get_settings
 
-# Load environment variables
-load_dotenv()
+logger = logging.getLogger(__name__)
 
 
 class CourtListenerClient:
     """Client for CourtListener API access."""
 
-    BASE_URL = "https://www.courtlistener.com/api/rest/v4/"
-    TIMEOUT = 30.0
-
-    def __init__(self) -> None:
+    def __init__(self, settings: Settings | None = None) -> None:
         """Initialize the CourtListener client."""
-        self.api_key = os.getenv("COURT_LISTENER_API_KEY")
-        self.client = httpx.AsyncClient(timeout=self.TIMEOUT)
+
+        self.settings = settings or get_settings()
+        self.base_url = self.settings.courtlistener_base_url.rstrip("/") + "/"
+        self.api_key = self.settings.courtlistener_api_key
+        self.cache_dir: Path = self.settings.courtlistener_cache_dir
+        self.cache_ttl = self.settings.courtlistener_cache_ttl_seconds
+        self.retry_attempts = max(1, self.settings.courtlistener_retry_attempts)
+        self.backoff = self.settings.courtlistener_retry_backoff
+
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.client = httpx.AsyncClient(
+            base_url=self.base_url, timeout=self.settings.courtlistener_timeout
+        )
 
         if self.api_key:
             logger.info("CourtListener API key found")
@@ -50,6 +60,70 @@ class CourtListenerClient:
         if self.api_key:
             headers["Authorization"] = f"Token {self.api_key}"
         return headers
+
+    def _cache_path(self, key: str, suffix: str = "json") -> Path:
+        return self.cache_dir / f"{key}.{suffix}"
+
+    def _read_cache(self, key: str, suffix: str = "json") -> Any | None:
+        path = self._cache_path(key, suffix)
+        if not path.exists():
+            return None
+
+        if time.time() - path.stat().st_mtime > self.cache_ttl:
+            path.unlink(missing_ok=True)
+            return None
+
+        try:
+            if suffix == "json":
+                with path.open("r", encoding="utf-8") as file:
+                    return json.load(file)
+            with path.open("r", encoding="utf-8") as file:
+                return file.read()
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning(f"Failed to read cache for {key}: {exc}")
+            return None
+
+    def _write_cache(self, key: str, data: Any, suffix: str = "json") -> None:
+        path = self._cache_path(key, suffix)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if suffix == "json":
+                with path.open("w", encoding="utf-8") as file:
+                    json.dump(data, file)
+            else:
+                with path.open("w", encoding="utf-8") as file:
+                    file.write(data)
+        except OSError as exc:
+            logger.warning(f"Failed to write cache for {key}: {exc}")
+
+    async def _request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
+        """Perform an HTTP request with retry and backoff."""
+
+        last_exc: Exception | None = None
+        for attempt in range(1, self.retry_attempts + 1):
+            try:
+                response = await self.client.request(method, url, **kwargs)
+                response.raise_for_status()
+                return response
+            except (httpx.RequestError, httpx.HTTPStatusError) as exc:
+                last_exc = exc
+                status = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
+                should_retry = attempt < self.retry_attempts and (status is None or status >= 500)
+
+                logger.warning(
+                    "CourtListener request failed (attempt %s/%s): %s", attempt, self.retry_attempts, exc
+                )
+
+                if not should_retry:
+                    logger.error("CourtListener request failed without remaining retries")
+                    raise
+
+                backoff_time = self.backoff * (2 ** (attempt - 1))
+                await asyncio.sleep(backoff_time)
+
+        if last_exc:
+            raise last_exc
+        raise RuntimeError("Request failed without raising an exception")
 
     async def search_opinions(
         self,
@@ -141,6 +215,19 @@ class CourtListenerClient:
                     event="courtlistener_search_error",
                 )
                 raise
+        logger.info(f"Searching opinions with params: {params}")
+
+        try:
+            response = await self._request(
+                "GET",
+                "search/",
+                params=params,
+                headers=self._get_headers(),
+            )
+            return response.json()
+        except httpx.HTTPError as e:
+            logger.error(f"Error searching opinions: {e}")
+            raise
 
     async def get_opinion(
         self, opinion_id: int, request_id: str | None = None
@@ -185,6 +272,25 @@ class CourtListenerClient:
                     event="courtlistener_get_opinion_error",
                 )
                 raise
+        logger.info(f"Fetching opinion {opinion_id}")
+
+        try:
+            cache_key = f"opinion_{opinion_id}"
+            cached_opinion = self._read_cache(cache_key)
+            if cached_opinion:
+                return cached_opinion
+
+            response = await self._request(
+                "GET",
+                f"opinions/{opinion_id}/",
+                headers=self._get_headers(),
+            )
+            data = response.json()
+            self._write_cache(cache_key, data)
+            return data
+        except httpx.HTTPError as e:
+            logger.error(f"Error fetching opinion {opinion_id}: {e}")
+            raise
 
     async def get_opinion_full_text(
         self, opinion_id: int, request_id: str | None = None
@@ -205,6 +311,15 @@ class CourtListenerClient:
             event="courtlistener_full_text",
         ):
             opinion = await self.get_opinion(opinion_id, request_id=request_id)
+        logger.info(f"Fetching full text for opinion {opinion_id}")
+
+        try:
+            cache_key = f"opinion_full_text_{opinion_id}"
+            cached_text = self._read_cache(cache_key, suffix="txt")
+            if cached_text:
+                return cached_text
+
+            opinion = await self.get_opinion(opinion_id)
 
             # Try different text fields in order of preference
             text_fields = [
@@ -226,6 +341,8 @@ class CourtListenerClient:
                         query_params={"opinion_id": opinion_id},
                         event="courtlistener_full_text",
                     )
+                    logger.info(f"Retrieved {len(text)} chars of text from field '{field}'")
+                    self._write_cache(cache_key, text, suffix="txt")
                     return text
 
             # Fallback to empty string if no text available
@@ -267,10 +384,22 @@ class CourtListenerClient:
         ):
             response = await self.client.get(
                 f"{self.BASE_URL}search/",
+        logger.info(f"Looking up citation: {citation}")
+
+        try:
+            # Search for the citation
+            params = {
+                "q": f'"{citation}"',
+                "type": "o",  # Opinion type
+                "order_by": "dateFiled asc",  # Oldest first (original case, not citing cases)
+                "hit": 20,  # Get more results to find the right one
+            }
+            response = await self._request(
+                "GET",
+                "search/",
                 params=params,
                 headers=self._get_headers(),
             )
-            response.raise_for_status()
             data = response.json()
 
             if not data.get("results"):
@@ -374,6 +503,16 @@ class CourtListenerClient:
                         event="find_citing_cases_retry",
                     )
                     continue
+                logger.info(f"Trying query: {query}")
+
+                response = await self._request(
+                    "GET", "search/", params=params, headers=self._get_headers()
+                )
+
+                data = response.json()
+                results = data.get("results", [])
+                logger.info(f"Found {len(results)} results with query: {query}")
+                return results
 
             # If all attempts failed, return empty list with log
             log_event(
@@ -392,7 +531,7 @@ class CourtListenerClient:
 _client: CourtListenerClient | None = None
 
 
-def get_client() -> CourtListenerClient:
+def get_client(settings: Settings | None = None) -> CourtListenerClient:
     """Get or create the global CourtListener client.
 
     Returns:
@@ -400,5 +539,5 @@ def get_client() -> CourtListenerClient:
     """
     global _client
     if _client is None:
-        _client = CourtListenerClient()
+        _client = CourtListenerClient(settings)
     return _client
