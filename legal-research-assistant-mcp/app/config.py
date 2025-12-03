@@ -38,6 +38,14 @@ class Settings(BaseSettings):
         default=30.0,
         description="Request timeout (seconds) for CourtListener API calls",
     )
+    courtlistener_connect_timeout: float = Field(
+        default=10.0,
+        description="Connect timeout (seconds) for CourtListener API calls",
+    )
+    courtlistener_read_timeout: float = Field(
+        default=60.0,
+        description="Read timeout (seconds) for CourtListener API calls",
+    )
     courtlistener_retry_attempts: int = Field(
         default=3,
         description="Number of retry attempts for CourtListener API requests",
