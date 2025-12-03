@@ -54,8 +54,9 @@ async def test_verify_quote(mock_client_funcs, mock_matcher):
     assert result["found"] is True
     assert result["citation"] == "100 U.S. 100"
 
-    mock_client_funcs.lookup_citation.assert_called_with("100 U.S. 100")
-    mock_client_funcs.get_opinion_full_text.assert_called_with(1)
+    from unittest.mock import ANY
+    mock_client_funcs.lookup_citation.assert_called_with("100 U.S. 100", request_id=ANY)
+    mock_client_funcs.get_opinion_full_text.assert_called_with(1, request_id=ANY)
     mock_matcher.verify_quote.assert_called()
 
 @pytest.mark.asyncio

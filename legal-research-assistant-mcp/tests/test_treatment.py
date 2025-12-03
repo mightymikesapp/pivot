@@ -50,7 +50,8 @@ async def test_check_case_validity_basic(mock_client):
     assert "confidence" in result
     assert isinstance(result.get("total_citing_cases", 0), int)
 
-    mock_client.lookup_citation.assert_called_with("410 U.S. 113")
+    from unittest.mock import ANY
+    mock_client.lookup_citation.assert_called_with("410 U.S. 113", request_id=ANY)
     mock_client.find_citing_cases.assert_called()
 
 
