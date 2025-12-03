@@ -1,0 +1,27 @@
+# Python bytecode and cache files
+__pycache__/
+*.py[cod]
+
+# Test artifacts
+.pytest_cache/
+
+# Coverage reports
+.coverage
+.coverage.*
+
+# Distribution and build outputs
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Virtual environments
+.venv/
+
+# IDE and editor settings
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+.DS_Store
