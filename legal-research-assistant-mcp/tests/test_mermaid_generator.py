@@ -14,17 +14,20 @@ def sample_network_data():
             {
                 "citation": "410 U.S. 113",
                 "case_name": "Roe v. Wade",
-                "date_filed": "1973-01-22"
+                "date_filed": "1973-01-22",
+                "court": "SCOTUS",
             },
             {
                 "citation": "505 U.S. 833",
                 "case_name": "Planned Parenthood v. Casey",
-                "date_filed": "1992-06-29"
+                "date_filed": "1992-06-29",
+                "court": "Third Circuit",
             },
             {
                 "citation": "597 U.S. 215",
                 "case_name": "Dobbs v. Jackson",
-                "date_filed": "2022-06-24"
+                "date_filed": "2022-06-24",
+                "court": "SCOTUS",
             }
         ],
         "edges": [
@@ -32,13 +35,15 @@ def sample_network_data():
                 "from_citation": "505 U.S. 833",
                 "to_citation": "410 U.S. 113",
                 "treatment": "affirmed",
-                "confidence": 0.8
+                "confidence": 0.8,
+                "excerpt": "Affirmed reasoning",
             },
             {
                 "from_citation": "597 U.S. 215",
                 "to_citation": "410 U.S. 113",
                 "treatment": "overruled",
-                "confidence": 0.95
+                "confidence": 0.95,
+                "excerpt": "Overruled prior holding",
             }
         ],
         "statistics": {
@@ -81,6 +86,7 @@ def test_generate_flowchart(sample_network_data):
     assert "overruled" in flowchart
     assert "classDef negative" in flowchart
     assert "classDef positive" in flowchart
+    assert "Legend" in flowchart
 
 def test_generate_graph(sample_network_data):
     generator = MermaidGenerator()
@@ -109,3 +115,30 @@ def test_generate_summary_stats(sample_network_data):
     assert "Citation Network: Roe v. Wade" in summary
     assert "Total Cases:** 3" in summary
     assert "overruled:** 1" in summary
+
+
+def test_generate_flowchart_with_sizes(sample_network_data):
+    generator = MermaidGenerator()
+    flowchart = generator.generate_flowchart(
+        sample_network_data, node_size_by="citation", show_legend=False
+    )
+
+    assert "size-lg" in flowchart
+    assert "court_scotus" in flowchart
+
+
+def test_generate_graphml(sample_network_data):
+    generator = MermaidGenerator()
+    graphml = generator.generate_graphml(sample_network_data)
+
+    assert "<graphml" in graphml
+    assert "data key=\"d0\">Roe v. Wade" in graphml
+    assert "excerpt" in graphml
+
+
+def test_generate_json_graph(sample_network_data):
+    generator = MermaidGenerator()
+    json_graph = generator.generate_json_graph(sample_network_data)
+
+    assert json_graph["root"] == "410 U.S. 113"
+    assert any(node["citation_score"] > 0 for node in json_graph["nodes"])
