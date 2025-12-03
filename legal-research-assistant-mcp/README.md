@@ -422,7 +422,19 @@ legal-research-assistant-mcp/
 - [x] Citation network construction
 - [x] Mermaid diagram generation
 - [x] Comprehensive markdown reports
-- [ ] Semantic case search
+- [ ] Tighten repository hygiene (.gitignore updates, clearer defaults)
+- [ ] Centralized configuration management with sensible overrides
+- [ ] Structured logging with correlation metadata
+- [ ] CI pipeline with pytest, ruff, mypy, and coverage gates
+- [ ] Resilient I/O (caching, retries, and sane timeouts)
+- [ ] Testing split between fast unit checks and integration suites
+- [ ] Research workflow helpers (pipeline runner, issue map generation)
+- [ ] Citation verification improvements with grounding checks
+- [ ] Advanced citation graph analytics (weighted edges, clustering)
+- [ ] Richer visualizations and export formats
+- [ ] Document uploads for user-provided sources
+- [ ] Generative helpers (memo and outline builders)
+- [ ] Semantic similarity search across corpora
 - [ ] Obsidian plugin integration
 - [ ] Batch processing pipelines
 - [ ] Citation graph algorithms (PageRank, centrality)
