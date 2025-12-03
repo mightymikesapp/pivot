@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     )
     courtlistener_connect_timeout: float = Field(
         default=10.0,
-        description="Connection timeout (seconds) for CourtListener API calls",
+        description="Connect timeout (seconds) for CourtListener API calls",
     )
     courtlistener_read_timeout: float = Field(
         default=60.0,

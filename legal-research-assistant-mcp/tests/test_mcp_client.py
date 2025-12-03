@@ -1,12 +1,12 @@
 """Tests for the MCP Client."""
 
-import logging
-from unittest.mock import MagicMock, patch
+from datetime import timedelta
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
-from app.mcp_client import CourtListenerClient, get_client
+from app.mcp_client import CircuitBreakerOpenError, CourtListenerClient, get_client
 from app.config import Settings
 from app.cache import CacheManager, CacheType
 
@@ -171,8 +171,9 @@ async def test_find_citing_cases(client_instance):
     client_instance.client.request = mock_request
 
     result = await client_instance.find_citing_cases("410 U.S. 113")
-    assert len(result) == 1
-    assert result[0]["caseName"] == "Citing Case"
+    assert len(result["results"]) == 1
+    assert result["results"][0]["caseName"] == "Citing Case"
+    assert result["failed_requests"] == []
 
     # Verify cache
     client_instance.cache_manager.get.assert_called_with(
@@ -203,8 +204,9 @@ async def test_find_citing_cases_retry(client_instance):
 
     result = await client_instance.find_citing_cases("410 U.S. 113")
 
-    assert len(result) == 1
-    assert result[0]["caseName"] == "Success"
+    assert len(result["results"]) == 1
+    assert result["results"][0]["caseName"] == "Success"
+    assert result["warnings"]
 
 
 @pytest.mark.asyncio
@@ -218,3 +220,190 @@ async def test_close(client_instance):
     client_instance.client.aclose = mock_aclose
 
     await client_instance.close()
+
+
+@pytest.mark.asyncio
+async def test_retry_and_backoff_for_rate_limits(monkeypatch):
+    """429/503 responses should be retried with capped exponential backoff."""
+
+    settings = Settings(
+        courtlistener_api_key="token",
+        courtlistener_retry_attempts=4,
+        courtlistener_retry_backoff=15,
+    )
+    client = CourtListenerClient(settings)
+
+    responses = [
+        httpx.HTTPStatusError(
+            "error",
+            request=httpx.Request("GET", "search/"),
+            response=httpx.Response(503, request=httpx.Request("GET", "search/")),
+        ),
+        httpx.HTTPStatusError(
+            "error",
+            request=httpx.Request("GET", "search/"),
+            response=httpx.Response(429, request=httpx.Request("GET", "search/")),
+        ),
+        httpx.Response(200, json={"ok": True}, request=httpx.Request("GET", "search/")),
+    ]
+
+    request_mock = AsyncMock(side_effect=responses)
+    client.client.request = request_mock
+
+    sleep_mock = AsyncMock()
+    monkeypatch.setattr("asyncio.sleep", sleep_mock)
+
+    response = await client._request("GET", "search/")
+
+    assert response.json()["ok"] is True
+    assert request_mock.await_count == 3
+
+    sleep_durations = [call.args[0] for call in sleep_mock.await_args_list]
+    assert sleep_durations  # ensure backoff invoked
+    assert max(sleep_durations) <= 30
+    assert sleep_durations[0] >= settings.courtlistener_retry_backoff
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [400, 401, 404])
+async def test_client_errors_not_retried(status_code, monkeypatch):
+    """Client errors should not trigger retries."""
+
+    settings = Settings(courtlistener_api_key="token", courtlistener_retry_attempts=5)
+    client = CourtListenerClient(settings)
+
+    error = httpx.HTTPStatusError(
+        "client error",
+        request=httpx.Request("GET", "search/"),
+        response=httpx.Response(status_code, request=httpx.Request("GET", "search/")),
+    )
+
+    request_mock = AsyncMock(side_effect=error)
+    client.client.request = request_mock
+
+    sleep_mock = AsyncMock()
+    monkeypatch.setattr("asyncio.sleep", sleep_mock)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await client._request("GET", "search/")
+
+    assert request_mock.await_count == 1
+    sleep_mock.assert_not_awaited()
+
+
+def test_timeout_configuration_applied():
+    """Configured connect/read timeouts should be passed to httpx."""
+
+    settings = Settings(
+        courtlistener_api_key="token",
+        courtlistener_timeout=120,
+        courtlistener_connect_timeout=5,
+        courtlistener_read_timeout=25,
+    )
+
+    with patch("app.mcp_client.httpx.AsyncClient") as mock_async_client:
+        mock_instance = AsyncMock()
+        mock_async_client.return_value = mock_instance
+
+        client = CourtListenerClient(settings)
+
+    assert client.client is mock_instance
+    timeout = mock_async_client.call_args.kwargs["timeout"]
+    assert timeout.connect == 5
+    assert timeout.read == 25
+    assert timeout.write == 120
+    assert timeout.pool == 120
+
+
+@pytest.mark.asyncio
+async def test_partial_results_track_failures(monkeypatch):
+    """Failed query attempts should be surfaced alongside results with reduced confidence."""
+
+    settings = Settings(
+        courtlistener_api_key="token",
+        courtlistener_retry_attempts=1,
+        courtlistener_retry_backoff=0,
+    )
+    client = CourtListenerClient(settings)
+    client.cache_manager = MagicMock()
+    client.cache_manager.get.return_value = None
+
+    error = httpx.HTTPStatusError(
+        "temporary error",
+        request=httpx.Request("GET", "search/"),
+        response=httpx.Response(503, request=httpx.Request("GET", "search/")),
+    )
+
+    success_response = httpx.Response(
+        200,
+        json={"results": [{"id": 1, "caseName": "Recovered"}]},
+        request=httpx.Request("GET", "search/"),
+    )
+
+    async def request_side_effect(*args, **kwargs):
+        if not request_side_effect.failed_once:
+            request_side_effect.failed_once = True
+            raise error
+        return success_response
+
+    request_side_effect.failed_once = False
+
+    client.client.request = AsyncMock(side_effect=request_side_effect)
+    monkeypatch.setattr("asyncio.sleep", AsyncMock())
+
+    result = await client.find_citing_cases("410 U.S. 113", limit=10)
+
+    assert result["results"] == [{"id": 1, "caseName": "Recovered"}]
+    assert result["failed_requests"]
+    assert result["incomplete_data"] is True
+    assert result["confidence"] < 1.0
+
+
+@pytest.mark.asyncio
+async def test_circuit_breaker_transitions(monkeypatch):
+    """Circuit breaker should open after failures, allow half-open, and reset after success."""
+
+    settings = Settings(
+        courtlistener_api_key="token",
+        courtlistener_retry_attempts=1,
+        courtlistener_retry_backoff=0,
+    )
+    client = CourtListenerClient(settings)
+
+    success_response = httpx.Response(200, json={"ok": True}, request=httpx.Request("GET", "search/"))
+
+    async def request_side_effect(*args, **kwargs):
+        request_side_effect.call_count += 1
+        if request_side_effect.call_count <= 5:
+            raise httpx.RequestError("boom")
+        if request_side_effect.call_count == 6:
+            return success_response
+        raise httpx.RequestError("boom-again")
+
+    request_side_effect.call_count = 0
+
+    client.client.request = AsyncMock(side_effect=request_side_effect)
+    monkeypatch.setattr("asyncio.sleep", AsyncMock())
+
+    for _ in range(5):
+        with pytest.raises(httpx.RequestError):
+            await client._request("GET", "search/")
+
+    assert client._circuit_open()
+
+    with pytest.raises(CircuitBreakerOpenError):
+        await client._request("GET", "search/")
+
+    assert client.client.request.await_count == 5
+
+    client.circuit_open_until = client.circuit_open_until - timedelta(seconds=61)
+
+    response = await client._request("GET", "search/")
+    assert response.status_code == 200
+    assert not client._circuit_open()
+    assert client.failure_count == 0
+
+    with pytest.raises(httpx.RequestError):
+        await client._request("GET", "search/")
+
+    assert client.failure_count == 1

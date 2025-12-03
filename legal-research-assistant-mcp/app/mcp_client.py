@@ -5,21 +5,41 @@ While we call it an MCP client for architectural clarity, it communicates with t
 API directly since MCP-to-MCP communication patterns are still evolving.
 """
 
-import json
-import logging
-import time
+import asyncio
 from datetime import datetime, timedelta
-from pathlib import Path
-from typing import Any
+import logging
+from typing import Any, Iterable
 
 import httpx
-from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait_exponential
+from tenacity import AsyncRetrying, RetryError, retry_if_exception, stop_after_attempt, wait_exponential
 
 from app.cache import CacheManager, CacheType, get_cache_manager
 from app.config import Settings, get_settings
 from app.logging_utils import log_event, log_operation
 
 logger = logging.getLogger(__name__)
+
+
+class CircuitBreakerOpenError(httpx.RequestError):
+    """Raised when the circuit breaker is open."""
+
+    def __init__(self, request: httpx.Request | None = None):
+        super().__init__("Circuit breaker open", request=request)
+
+
+class CitingCasesResult(list[dict[str, Any]]):
+    """List-like result with metadata for citing cases queries."""
+
+    def __init__(
+        self,
+        iterable: Iterable[dict[str, Any]] | None = None,
+        *,
+        failed_requests: list[dict[str, Any]] | None = None,
+        confidence: float = 1.0,
+    ) -> None:
+        super().__init__(iterable or [])
+        self.failed_requests = failed_requests or []
+        self.confidence = confidence
 
 
 class CourtListenerClient:
@@ -33,25 +53,16 @@ class CourtListenerClient:
         self.api_key = self.settings.courtlistener_api_key
         self.retry_attempts = max(1, self.settings.courtlistener_retry_attempts)
         self.backoff = self.settings.courtlistener_retry_backoff
-        self.cache_manager = CacheManager(self.settings.courtlistener_cache_dir)
-        self.cache_dir = self.settings.courtlistener_cache_dir
-        self.cache_ttl = self.settings.courtlistener_ttl_metadata
+        self.failure_count = 0
+        self.circuit_open_until: datetime | None = None
+        self.cache_manager = get_cache_manager()
 
-        self.circuit_breaker_failures = 0
-        self.circuit_breaker_state: str = "closed"
-        self.circuit_breaker_open_until: datetime | None = None
-        self.circuit_breaker_threshold = 5
-        self.circuit_breaker_reset_timeout = timedelta(seconds=60)
-
-        self.client = httpx.AsyncClient(
-            base_url=self.base_url,
-            timeout=httpx.Timeout(
-                connect=self.settings.courtlistener_connect_timeout,
-                read=self.settings.courtlistener_read_timeout,
-                write=self.settings.courtlistener_timeout,
-                pool=self.settings.courtlistener_timeout,
-            ),
+        timeout = httpx.Timeout(
+            timeout=self.settings.courtlistener_timeout,
+            connect=self.settings.courtlistener_connect_timeout,
+            read=self.settings.courtlistener_read_timeout,
         )
+        self.client = httpx.AsyncClient(base_url=self.base_url, timeout=timeout)
 
         if self.api_key:
             logger.info("CourtListener API key found")
@@ -73,69 +84,59 @@ class CourtListenerClient:
             headers["Authorization"] = f"Token {self.api_key}"
         return headers
 
-    def _should_retry_exception(self, exc: BaseException) -> bool:
-        """Determine whether a request exception should trigger a retry."""
-
-        if isinstance(exc, httpx.HTTPStatusError):
-            return exc.response.status_code in {429, 500, 502, 503, 504}
-        return isinstance(exc, httpx.RequestError)
-
-    def _ensure_circuit_allows_request(self) -> None:
-        """Ensure the circuit breaker permits the request."""
-
-        if self.circuit_breaker_state == "open":
-            if self.circuit_breaker_open_until and datetime.utcnow() >= self.circuit_breaker_open_until:
-                self.circuit_breaker_state = "half-open"
-                self.circuit_breaker_failures = self.circuit_breaker_threshold - 1
-            else:
-                raise httpx.HTTPError("Circuit breaker is open; request short-circuited")
-
-    def _record_success(self) -> None:
-        """Reset circuit breaker on successful request."""
-
-        self.circuit_breaker_failures = 0
-        self.circuit_breaker_state = "closed"
-        self.circuit_breaker_open_until = None
+    def _circuit_open(self) -> bool:
+        return self.circuit_open_until is not None and datetime.utcnow() < self.circuit_open_until
 
     def _record_failure(self) -> None:
-        """Update circuit breaker state after a failed request."""
+        self.failure_count += 1
+        if self.failure_count >= 5:
+            self.circuit_open_until = datetime.utcnow() + timedelta(seconds=60)
 
-        if self.circuit_breaker_state == "half-open":
-            self._open_circuit()
-            return
-
-        self.circuit_breaker_failures += 1
-        if self.circuit_breaker_failures >= self.circuit_breaker_threshold:
-            self._open_circuit()
-
-    def _open_circuit(self) -> None:
-        """Open the circuit breaker and schedule half-open transition."""
-
-        self.circuit_breaker_state = "open"
-        self.circuit_breaker_open_until = datetime.utcnow() + self.circuit_breaker_reset_timeout
+    def _record_success(self) -> None:
+        self.failure_count = 0
+        self.circuit_open_until = None
 
     async def _request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
-        """Perform an HTTP request with retry and backoff."""
+        """Perform an HTTP request with retry, backoff, and circuit breaker."""
 
-        self._ensure_circuit_allows_request()
+        if self._circuit_open():
+            raise CircuitBreakerOpenError()
+
+        async def _do_request() -> httpx.Response:
+            response = await self.client.request(method, url, **kwargs)
+            response.raise_for_status()
+            return response
+
+        def _should_retry(exc: BaseException) -> bool:
+            if isinstance(exc, CircuitBreakerOpenError):
+                return False
+            if isinstance(exc, httpx.HTTPStatusError):
+                return exc.response.status_code in {429, 500, 502, 503, 504}
+            return isinstance(exc, httpx.RequestError)
 
         retrying = AsyncRetrying(
+            retry=retry_if_exception(_should_retry),
             stop=stop_after_attempt(self.retry_attempts),
-            wait=wait_exponential(multiplier=self.backoff, min=1, max=30),
-            retry=retry_if_exception(self._should_retry_exception),
+            wait=wait_exponential(multiplier=self.backoff, min=self.backoff, max=30),
             reraise=True,
         )
 
         try:
             async for attempt in retrying:
                 with attempt:
-                    response = await self.client.request(method, url, **kwargs)
-                    response.raise_for_status()
+                    response = await _do_request()
                     self._record_success()
                     return response
-        except Exception as exc:  # noqa: BLE001
+        except RetryError as exc:
+            last_exc = exc.last_attempt.exception()
+            if last_exc:
+                if not isinstance(last_exc, CircuitBreakerOpenError):
+                    self._record_failure()
+                raise last_exc
+            raise
+        except Exception:
             self._record_failure()
-            raise exc
+            raise
 
     async def search_opinions(
         self,
@@ -473,7 +474,7 @@ class CourtListenerClient:
         citation: str,
         limit: int = 100,
         request_id: str | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         """Find cases that cite a given citation.
 
         Args:
@@ -486,13 +487,14 @@ class CourtListenerClient:
         cache_key = {"citing_cases": citation, "limit": limit}
         cached_results = self.cache_manager.get(CacheType.SEARCH, cache_key)
         if cached_results is not None:
-            return cached_results
+            return CitingCasesResult(cached_results)
 
         query_attempts = [
             f'"{citation}"',  # Simple quoted search - finds cases mentioning citation
             citation,  # Unquoted
         ]
 
+        failed_requests: list[dict[str, Any]] = []
         with log_operation(
             logger,
             tool_name="find_citing_cases",
@@ -500,6 +502,11 @@ class CourtListenerClient:
             query_params={"citation": citation, "limit": limit},
             event="find_citing_cases",
         ):
+            aggregated_results: list[dict[str, Any]] = []
+            failed_requests: list[dict[str, Any]] = []
+            warnings: list[str] = []
+            confidence = 1.0
+
             for query in query_attempts:
                 params = {
                     "q": query,
@@ -516,8 +523,7 @@ class CourtListenerClient:
                     data = response.json()
                     results = data.get("results", [])
                     if results:
-                        if self.settings.courtlistener_search_cache_enabled:
-                            self.cache_manager.set(CacheType.SEARCH, cache_key, results)
+                        aggregated_results.extend(results)
                         log_event(
                             logger,
                             "Found citing cases",
@@ -527,11 +533,16 @@ class CourtListenerClient:
                             citation_count=len(results),
                             event="find_citing_cases_success",
                         )
-                        return results
+                        if len(aggregated_results) >= limit:
+                            break
                     else:
+                        warning_msg = (
+                            f"Query '{query}' yielded no results; continuing with fallback searches."
+                        )
+                        warnings.append(warning_msg)
                         log_event(
                             logger,
-                            f"Query '{query}' yielded no results, trying next...",
+                            warning_msg,
                             level=logging.WARNING,
                             tool_name="find_citing_cases",
                             request_id=request_id,
@@ -539,28 +550,86 @@ class CourtListenerClient:
                             event="find_citing_cases_retry",
                         )
                 except httpx.HTTPError as e:
+                    status_code = (
+                        e.response.status_code if isinstance(e, httpx.HTTPStatusError) else None
+                    )
+                    failed_requests.append(
+                        {
+                            "url": f"{self.base_url}search/",
+                            "params": params,
+                            "status": status_code,
+                            "message": str(e),
+                        }
+                    )
+                    confidence = max(confidence - 0.2, 0.3)
+                    warning_msg = f"Query '{query}' failed with error: {e}; continuing with fallback searches."
+                    warnings.append(warning_msg)
                     log_event(
                         logger,
-                        f"Query '{query}' failed with error: {e}, trying next...",
+                        warning_msg,
                         level=logging.ERROR,
                         tool_name="find_citing_cases",
                         request_id=request_id,
                         query_params=params,
                         event="find_citing_cases_retry_error",
                     )
+                    failed_requests.append(
+                        {
+                            "query": query,
+                            "params": params,
+                            "error": str(e),
+                            "status": getattr(e.response, "status_code", None),
+                        }
+                    )
                     continue
 
-            # If all attempts failed, return empty list with log
+            # Deduplicate results while preserving order
+            seen_ids: set[Any] = set()
+            deduped_results: list[dict[str, Any]] = []
+            for result in aggregated_results:
+                identifier = result.get("id") or result.get("absolute_url") or id(result)
+                if identifier in seen_ids:
+                    continue
+                seen_ids.add(identifier)
+                deduped_results.append(result)
+
+            if deduped_results:
+                deduped_results = deduped_results[:limit]
+                self.cache_manager.set(
+                    CacheType.SEARCH,
+                    cache_key,
+                    {
+                        "results": deduped_results,
+                        "warnings": warnings,
+                        "failed_requests": failed_requests,
+                        "incomplete_data": bool(failed_requests),
+                        "confidence": confidence,
+                    },
+                )
+
+            incomplete_data = bool(failed_requests)
+            if not deduped_results:
+                warnings.append("No citing cases were found across all query attempts.")
+                incomplete_data = True
+                confidence = min(confidence, 0.5)
+
             log_event(
                 logger,
-                f"All query attempts failed for citation: {citation}",
-                level=logging.ERROR,
+                "Completed citing case search",
                 tool_name="find_citing_cases",
                 request_id=request_id,
                 query_params={"citation": citation, "limit": limit},
-                event="find_citing_cases_error",
+                citation_count=len(deduped_results),
+                event="find_citing_cases_complete",
             )
-            return []
+
+            return {
+                "results": deduped_results,
+                "warnings": warnings,
+                "failed_requests": failed_requests,
+                "incomplete_data": incomplete_data,
+                "confidence": confidence,
+            }
 
     def _cache_path(self, key: str) -> Path:
         """Return the filesystem path for a legacy cache key."""

@@ -57,11 +57,12 @@ async def check_case_validity_impl(
             }
 
         # Step 2: Find citing cases
-        citing_cases = await client.find_citing_cases(
+        citing_cases_result = await client.find_citing_cases(
             citation,
             limit=settings.max_citing_cases,
             request_id=request_id,
         )
+        citing_cases = citing_cases_result["results"]
         log_event(
             logger,
             "Citing cases located",
@@ -69,6 +70,10 @@ async def check_case_validity_impl(
             request_id=request_id,
             query_params={"citation": citation},
             citation_count=len(citing_cases),
+            extra_context={
+                "incomplete_data": citing_cases_result.get("incomplete_data", False),
+                "warnings": citing_cases_result.get("warnings", []),
+            },
             event="citing_cases_fetched",
         )
 
@@ -190,18 +195,24 @@ async def check_case_validity_impl(
                         }
                     )
 
+            base_confidence = aggregated.confidence
+            if citing_cases_result.get("incomplete_data"):
+                base_confidence = max(base_confidence * 0.8, 0.3)
+
             return {
                 "citation": citation,
                 "case_name": target_case.get("caseName", "Unknown"),
                 "is_good_law": aggregated.is_good_law,
-                "confidence": round(aggregated.confidence, 2),
+                "confidence": round(base_confidence, 2),
                 "summary": aggregated.summary,
                 "total_citing_cases": aggregated.total_citing_cases,
                 "positive_count": aggregated.positive_count,
                 "negative_count": aggregated.negative_count,
                 "neutral_count": aggregated.neutral_count,
                 "unknown_count": aggregated.unknown_count,
-                "warnings": warnings,
+                "warnings": warnings + citing_cases_result.get("warnings", []),
+                "failed_requests": citing_cases_result.get("failed_requests", []),
+                "incomplete_data": citing_cases_result.get("incomplete_data", False),
                 "recommendation": (
                     "Manual review recommended"
                     if not aggregated.is_good_law or aggregated.negative_count > 0
@@ -221,7 +232,9 @@ async def check_case_validity_impl(
                 "negative_count": 0,
                 "neutral_count": 0,
                 "unknown_count": 0,
-                "warnings": [],
+                "warnings": citing_cases_result.get("warnings", []),
+                "failed_requests": citing_cases_result.get("failed_requests", []),
+                "incomplete_data": citing_cases_result.get("incomplete_data", True),
                 "recommendation": "Case has not been cited. Validity uncertain.",
             }
 
@@ -254,9 +267,10 @@ async def get_citing_cases_impl(
         event="get_citing_cases",
     ):
         # Find citing cases
-        citing_cases = await client.find_citing_cases(
+        citing_cases_result = await client.find_citing_cases(
             citation, limit=limit, request_id=request_id
         )
+        citing_cases = citing_cases_result["results"]
 
         # Analyze treatment
         treatments = []
@@ -299,6 +313,9 @@ async def get_citing_cases_impl(
             "total_found": len(citing_cases),
             "citing_cases": treatments,
             "filter_applied": treatment_filter,
+            "incomplete_data": citing_cases_result.get("incomplete_data", False),
+            "warnings": citing_cases_result.get("warnings", []),
+            "failed_requests": citing_cases_result.get("failed_requests", []),
         }
 
 
