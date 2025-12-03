@@ -3,7 +3,8 @@
 from pathlib import Path
 
 from pydantic import AliasChoices, Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.settings_base import BaseSettings, SettingsConfigDict
 
 from app.logging_config import configure_logging
 
@@ -37,6 +38,14 @@ class Settings(BaseSettings):
     courtlistener_timeout: float = Field(
         default=30.0,
         description="Request timeout (seconds) for CourtListener API calls",
+    )
+    courtlistener_connect_timeout: float = Field(
+        default=10.0,
+        description="Connection timeout (seconds) for CourtListener API calls",
+    )
+    courtlistener_read_timeout: float = Field(
+        default=60.0,
+        description="Read timeout (seconds) for CourtListener API calls",
     )
     courtlistener_retry_attempts: int = Field(
         default=3,
@@ -72,6 +81,10 @@ class Settings(BaseSettings):
     courtlistener_ttl_search: int = Field(
         default=3600,  # 1 hour
         description="TTL (seconds) for search results",
+    )
+    courtlistener_search_cache_enabled: bool = Field(
+        default=True,
+        description="Enable or disable caching for search endpoints",
     )
 
     # Server configuration

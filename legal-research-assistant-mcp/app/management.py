@@ -62,15 +62,13 @@ def _handle_cache_stats(_: argparse.Namespace) -> dict[str, Any]:
 
 def build_parser() -> argparse.ArgumentParser:
     """Create the top-level argument parser."""
-    parser = argparse.ArgumentParser(description="Management commands for the MCP server")
+    parser = argparse.ArgumentParser(
+        description="Management commands for the MCP server", exit_on_error=False
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     clear_parser = subparsers.add_parser("cache:clear", help="Clear cached CourtListener responses")
-    clear_parser.add_argument(
-        "--type",
-        choices=[t.value for t in CacheType],
-        help="Optional cache type to clear (metadata, text, search)",
-    )
+    clear_parser.add_argument("--type", help="Optional cache type to clear (metadata, text, search)")
     clear_parser.set_defaults(handler=_handle_cache_clear)
 
     stats_parser = subparsers.add_parser("cache:stats", help="Show cache statistics")

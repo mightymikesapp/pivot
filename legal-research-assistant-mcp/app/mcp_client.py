@@ -5,15 +5,19 @@ While we call it an MCP client for architectural clarity, it communicates with t
 API directly since MCP-to-MCP communication patterns are still evolving.
 """
 
-import asyncio
+import json
 import logging
+import time
+from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import httpx
+from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait_exponential
 
-from app.cache import CacheType, get_cache_manager
-from app.logging_utils import log_event, log_operation
+from app.cache import CacheManager, CacheType, get_cache_manager
 from app.config import Settings, get_settings
+from app.logging_utils import log_event, log_operation
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +33,24 @@ class CourtListenerClient:
         self.api_key = self.settings.courtlistener_api_key
         self.retry_attempts = max(1, self.settings.courtlistener_retry_attempts)
         self.backoff = self.settings.courtlistener_retry_backoff
-        self.cache_manager = get_cache_manager()
+        self.cache_manager = CacheManager(self.settings.courtlistener_cache_dir)
+        self.cache_dir = self.settings.courtlistener_cache_dir
+        self.cache_ttl = self.settings.courtlistener_ttl_metadata
+
+        self.circuit_breaker_failures = 0
+        self.circuit_breaker_state: str = "closed"
+        self.circuit_breaker_open_until: datetime | None = None
+        self.circuit_breaker_threshold = 5
+        self.circuit_breaker_reset_timeout = timedelta(seconds=60)
 
         self.client = httpx.AsyncClient(
-            base_url=self.base_url, timeout=self.settings.courtlistener_timeout
+            base_url=self.base_url,
+            timeout=httpx.Timeout(
+                connect=self.settings.courtlistener_connect_timeout,
+                read=self.settings.courtlistener_read_timeout,
+                write=self.settings.courtlistener_timeout,
+                pool=self.settings.courtlistener_timeout,
+            ),
         )
 
         if self.api_key:
@@ -55,34 +73,69 @@ class CourtListenerClient:
             headers["Authorization"] = f"Token {self.api_key}"
         return headers
 
+    def _should_retry_exception(self, exc: BaseException) -> bool:
+        """Determine whether a request exception should trigger a retry."""
+
+        if isinstance(exc, httpx.HTTPStatusError):
+            return exc.response.status_code in {429, 500, 502, 503, 504}
+        return isinstance(exc, httpx.RequestError)
+
+    def _ensure_circuit_allows_request(self) -> None:
+        """Ensure the circuit breaker permits the request."""
+
+        if self.circuit_breaker_state == "open":
+            if self.circuit_breaker_open_until and datetime.utcnow() >= self.circuit_breaker_open_until:
+                self.circuit_breaker_state = "half-open"
+                self.circuit_breaker_failures = self.circuit_breaker_threshold - 1
+            else:
+                raise httpx.HTTPError("Circuit breaker is open; request short-circuited")
+
+    def _record_success(self) -> None:
+        """Reset circuit breaker on successful request."""
+
+        self.circuit_breaker_failures = 0
+        self.circuit_breaker_state = "closed"
+        self.circuit_breaker_open_until = None
+
+    def _record_failure(self) -> None:
+        """Update circuit breaker state after a failed request."""
+
+        if self.circuit_breaker_state == "half-open":
+            self._open_circuit()
+            return
+
+        self.circuit_breaker_failures += 1
+        if self.circuit_breaker_failures >= self.circuit_breaker_threshold:
+            self._open_circuit()
+
+    def _open_circuit(self) -> None:
+        """Open the circuit breaker and schedule half-open transition."""
+
+        self.circuit_breaker_state = "open"
+        self.circuit_breaker_open_until = datetime.utcnow() + self.circuit_breaker_reset_timeout
+
     async def _request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
         """Perform an HTTP request with retry and backoff."""
 
-        last_exc: Exception | None = None
-        for attempt in range(1, self.retry_attempts + 1):
-            try:
-                response = await self.client.request(method, url, **kwargs)
-                response.raise_for_status()
-                return response
-            except (httpx.RequestError, httpx.HTTPStatusError) as exc:
-                last_exc = exc
-                status = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
-                should_retry = attempt < self.retry_attempts and (status is None or status >= 500)
+        self._ensure_circuit_allows_request()
 
-                logger.warning(
-                    "CourtListener request failed (attempt %s/%s): %s", attempt, self.retry_attempts, exc
-                )
+        retrying = AsyncRetrying(
+            stop=stop_after_attempt(self.retry_attempts),
+            wait=wait_exponential(multiplier=self.backoff, min=1, max=30),
+            retry=retry_if_exception(self._should_retry_exception),
+            reraise=True,
+        )
 
-                if not should_retry:
-                    logger.error("CourtListener request failed without remaining retries")
-                    raise
-
-                backoff_time = self.backoff * (2 ** (attempt - 1))
-                await asyncio.sleep(backoff_time)
-
-        if last_exc:
-            raise last_exc
-        raise RuntimeError("Request failed without raising an exception")
+        try:
+            async for attempt in retrying:
+                with attempt:
+                    response = await self.client.request(method, url, **kwargs)
+                    response.raise_for_status()
+                    self._record_success()
+                    return response
+        except Exception as exc:  # noqa: BLE001
+            self._record_failure()
+            raise exc
 
     async def search_opinions(
         self,
@@ -147,9 +200,10 @@ class CourtListenerClient:
             event="courtlistener_search",
         ):
             # Check cache
-            cached_result = self.cache_manager.get(CacheType.SEARCH, params)
-            if cached_result is not None:
-                return cached_result
+            if self.settings.courtlistener_search_cache_enabled:
+                cached_result = self.cache_manager.get(CacheType.SEARCH, params)
+                if cached_result is not None:
+                    return cached_result
 
             try:
                 response = await self._request(
@@ -160,8 +214,8 @@ class CourtListenerClient:
                 )
                 result = response.json()
 
-                # Write cache
-                self.cache_manager.set(CacheType.SEARCH, params, result)
+                if self.settings.courtlistener_search_cache_enabled:
+                    self.cache_manager.set(CacheType.SEARCH, params, result)
 
                 log_event(
                     logger,
@@ -219,6 +273,7 @@ class CourtListenerClient:
 
                 # Write cache
                 self.cache_manager.set(CacheType.METADATA, cache_key, data)
+                self._write_cache(f"opinion_{opinion_id}", data)
 
                 log_event(
                     logger,
@@ -341,7 +396,7 @@ class CourtListenerClient:
         cache_key = {"citation_lookup": citation}
         cached_result = self.cache_manager.get(CacheType.SEARCH, cache_key)
         if cached_result:
-             return cached_result
+            return cached_result
 
         with log_operation(
             logger,
@@ -397,7 +452,8 @@ class CourtListenerClient:
                     )
                     result_to_return = data["results"][0]
 
-                self.cache_manager.set(CacheType.SEARCH, cache_key, result_to_return)
+                if self.settings.courtlistener_search_cache_enabled:
+                    self.cache_manager.set(CacheType.SEARCH, cache_key, result_to_return)
                 return result_to_return
 
             except httpx.HTTPError as e:
@@ -460,7 +516,8 @@ class CourtListenerClient:
                     data = response.json()
                     results = data.get("results", [])
                     if results:
-                        self.cache_manager.set(CacheType.SEARCH, cache_key, results)
+                        if self.settings.courtlistener_search_cache_enabled:
+                            self.cache_manager.set(CacheType.SEARCH, cache_key, results)
                         log_event(
                             logger,
                             "Found citing cases",
@@ -504,6 +561,49 @@ class CourtListenerClient:
                 event="find_citing_cases_error",
             )
             return []
+
+    def _cache_path(self, key: str) -> Path:
+        """Return the filesystem path for a legacy cache key."""
+
+        safe_key = key.replace("/", "_")
+        return self.cache_dir / f"{safe_key}.json"
+
+    def _read_cache(self, key: str) -> Any | None:
+        """Read cached JSON content for backward compatibility tests."""
+
+        path = self._cache_path(key)
+        if not path.exists():
+            return None
+
+        age = time.time() - path.stat().st_mtime
+        if age > self.cache_ttl:
+            try:
+                path.unlink()
+            except OSError:
+                pass
+            return None
+
+        try:
+            with path.open("r", encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, json.JSONDecodeError):
+            try:
+                path.unlink()
+            except OSError:
+                pass
+            return None
+
+    def _write_cache(self, key: str, data: Any) -> None:
+        """Write JSON data to the legacy cache path."""
+
+        path = self._cache_path(key)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("w", encoding="utf-8") as f:
+                json.dump(data, f)
+        except OSError:
+            # Swallow cache write errors
+            return
 
 
 # Global client instance
