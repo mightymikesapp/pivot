@@ -10,6 +10,7 @@ from typing import Any
 from fastmcp import FastMCP
 
 from app.analysis.quote_matcher import QuoteMatcher
+from app.logging_utils import log_event, log_operation
 from app.mcp_client import get_client
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,7 @@ async def verify_quote_impl(
     quote: str,
     citation: str,
     pinpoint: str | None = None,
+    request_id: str | None = None,
 ) -> dict[str, Any]:
     """Verify a quote appears in the cited source.
 
@@ -38,14 +40,17 @@ async def verify_quote_impl(
     Returns:
         Dictionary with verification results
     """
-    logger.info(f"Verifying quote for citation: {citation}")
-
     client = get_client()
 
-    try:
+    with log_operation(
+        logger,
+        tool_name="verify_quote",
+        request_id=request_id,
+        query_params={"citation": citation, "pinpoint": pinpoint},
+        event="verify_quote",
+    ):
         # Step 1: Look up the case
-        logger.info(f"Looking up case: {citation}")
-        target_case = await client.lookup_citation(citation)
+        target_case = await client.lookup_citation(citation, request_id=request_id)
 
         if "error" in target_case:
             return {
@@ -55,7 +60,14 @@ async def verify_quote_impl(
             }
 
         case_name = target_case.get("caseName", "Unknown")
-        logger.info(f"Found case: {case_name}")
+        log_event(
+            logger,
+            "Case located for quote verification",
+            tool_name="verify_quote",
+            request_id=request_id,
+            query_params={"citation": citation, "pinpoint": pinpoint},
+            event="verify_quote_case",
+        )
 
         # Step 2: Get full text of the opinion
         # Extract opinion IDs
@@ -72,9 +84,9 @@ async def verify_quote_impl(
             }
 
         opinion_id = opinion_ids[0]
-        logger.info(f"Fetching full text for opinion {opinion_id}")
-
-        full_text = await client.get_opinion_full_text(opinion_id)
+        full_text = await client.get_opinion_full_text(
+            opinion_id, request_id=request_id
+        )
 
         if not full_text:
             return {
@@ -84,7 +96,15 @@ async def verify_quote_impl(
                 "quote": quote,
             }
 
-        logger.info(f"Retrieved {len(full_text)} characters of opinion text")
+        log_event(
+            logger,
+            "Opinion text retrieved for quote verification",
+            tool_name="verify_quote",
+            request_id=request_id,
+            query_params={"citation": citation, "pinpoint": pinpoint},
+            citation_count=len(full_text),
+            event="verify_quote_text",
+        )
 
         # Step 3: Verify the quote
         result = matcher.verify_quote(quote, full_text, citation)
@@ -132,17 +152,10 @@ async def verify_quote_impl(
 
         return response
 
-    except Exception as e:
-        logger.error(f"Error verifying quote: {e}", exc_info=True)
-        return {
-            "error": f"Failed to verify quote: {str(e)}",
-            "citation": citation,
-            "quote": quote,
-        }
-
 
 async def batch_verify_quotes_impl(
     quotes: list[dict[str, str]],
+    request_id: str | None = None,
 ) -> dict[str, Any]:
     """Verify multiple quotes in batch.
 
@@ -152,44 +165,67 @@ async def batch_verify_quotes_impl(
     Returns:
         Dictionary with batch verification results
     """
-    logger.info(f"Batch verifying {len(quotes)} quotes")
-
-    results = []
-    for i, quote_data in enumerate(quotes, 1):
-        logger.info(f"Processing quote {i}/{len(quotes)}")
-
-        quote = quote_data.get("quote", "")
-        citation = quote_data.get("citation", "")
-        pinpoint = quote_data.get("pinpoint")
-
-        if not quote or not citation:
-            results.append(
-                {
-                    "error": "Missing quote or citation",
-                    "quote": quote,
-                    "citation": citation,
-                }
+    with log_operation(
+        logger,
+        tool_name="batch_verify_quotes",
+        request_id=request_id,
+        query_params={"total_quotes": len(quotes)},
+        event="batch_verify_quotes",
+    ):
+        results = []
+        for i, quote_data in enumerate(quotes, 1):
+            log_event(
+                logger,
+                "Processing quote for verification",
+                tool_name="batch_verify_quotes",
+                request_id=request_id,
+                query_params={"index": i, "citation": quote_data.get("citation")},
             )
-            continue
 
-        result = await verify_quote_impl(quote, citation, pinpoint)
-        results.append(result)
+            quote = quote_data.get("quote", "")
+            citation = quote_data.get("citation", "")
+            pinpoint = quote_data.get("pinpoint")
 
-    # Summary statistics
-    total = len(results)
-    verified = sum(1 for r in results if r.get("found"))
-    exact = sum(1 for r in results if r.get("exact_match"))
-    errors = sum(1 for r in results if "error" in r)
+            if not quote or not citation:
+                results.append(
+                    {
+                        "error": "Missing quote or citation",
+                        "quote": quote,
+                        "citation": citation,
+                    }
+                )
+                continue
 
-    return {
-        "total_quotes": total,
-        "verified": verified,
-        "exact_matches": exact,
-        "fuzzy_matches": verified - exact,
-        "not_found": total - verified - errors,
-        "errors": errors,
-        "results": results,
-    }
+            result = await verify_quote_impl(
+                quote, citation, pinpoint, request_id=request_id
+            )
+            results.append(result)
+
+        # Summary statistics
+        total = len(results)
+        verified = sum(1 for r in results if r.get("found"))
+        exact = sum(1 for r in results if r.get("exact_match"))
+        errors = sum(1 for r in results if "error" in r)
+
+        log_event(
+            logger,
+            "Batch verification complete",
+            tool_name="batch_verify_quotes",
+            request_id=request_id,
+            query_params={"total_quotes": len(quotes)},
+            citation_count=verified,
+            event="batch_verify_quotes_complete",
+        )
+
+        return {
+            "total_quotes": total,
+            "verified": verified,
+            "exact_matches": exact,
+            "fuzzy_matches": verified - exact,
+            "not_found": total - verified - errors,
+            "errors": errors,
+            "results": results,
+        }
 
 
 # Create verification tools server
@@ -204,6 +240,7 @@ async def verify_quote(
     quote: str,
     citation: str,
     pinpoint: str | None = None,
+    request_id: str | None = None,
 ) -> dict[str, Any]:
     """Verify that a quote accurately appears in the cited case.
 
@@ -242,12 +279,13 @@ async def verify_quote(
             }
         }
     """
-    return await verify_quote_impl(quote, citation, pinpoint)
+    return await verify_quote_impl(quote, citation, pinpoint, request_id=request_id)
 
 
 @verification_server.tool()
 async def batch_verify_quotes(
     quotes: list[dict[str, str]],
+    request_id: str | None = None,
 ) -> dict[str, Any]:
     """Verify multiple quotes in a single batch operation.
 
@@ -281,4 +319,4 @@ async def batch_verify_quotes(
             "results": [...]
         }
     """
-    return await batch_verify_quotes_impl(quotes)
+    return await batch_verify_quotes_impl(quotes, request_id=request_id)

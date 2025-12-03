@@ -9,6 +9,7 @@ from ..analysis.citation_network import CitationNetworkBuilder
 from ..analysis.mermaid_generator import MermaidGenerator
 from ..analysis.treatment_classifier import TreatmentClassifier
 from ..config import get_settings
+from ..logging_utils import log_event, log_operation
 from ..mcp_client import get_client
 
 logger = logging.getLogger(__name__)
@@ -21,99 +22,137 @@ async def build_citation_network_impl(
     max_depth: int = 2,
     max_nodes: int = 100,
     include_treatments: bool = True,
+    request_id: str | None = None,
 ) -> dict[str, Any]:
     """Implementation of build_citation_network."""
+    query_params = {
+        "citation": citation,
+        "max_depth": max_depth,
+        "max_nodes": max_nodes,
+        "include_treatments": include_treatments,
+    }
+
     settings = get_settings()
     client = get_client()
 
-    logger.info(f"Building citation network for {citation}")
+    with log_operation(
+        logger,
+        tool_name="build_citation_network",
+        request_id=request_id,
+        query_params=query_params,
+        event="build_citation_network",
+    ):
+        log_event(
+            logger,
+            "Looking up root case",
+            tool_name="build_citation_network",
+            request_id=request_id,
+            query_params=query_params,
+        )
+        root_case = await client.lookup_citation(citation, request_id=request_id)
 
-    # Look up the root case
-    root_case = await client.lookup_citation(citation)
+        if "error" in root_case:
+            return {
+                "error": f"Could not find case for citation: {citation}",
+                "citation": citation,
+            }
 
-    if "error" in root_case:
+        # Get citing cases
+        citing_cases = await client.find_citing_cases(
+            citation, limit=max_nodes, request_id=request_id
+        )
+
+        log_event(
+            logger,
+            "Citing cases retrieved",
+            tool_name="build_citation_network",
+            request_id=request_id,
+            query_params=query_params,
+            citation_count=len(citing_cases),
+            event="citation_lookup",
+        )
+
+        if not citing_cases:
+            return {
+                "root_citation": citation,
+                "root_case_name": root_case.get("caseName"),
+                "nodes": [
+                    {
+                        "citation": citation,
+                        "case_name": root_case.get("caseName"),
+                        "date_filed": root_case.get("dateFiled"),
+                        "court": root_case.get("court"),
+                    }
+                ],
+                "edges": [],
+                "statistics": {
+                    "total_nodes": 1,
+                    "total_edges": 0,
+                    "message": "No citing cases found",
+                },
+            }
+
+        # Optionally include treatment analysis
+        treatments = None
+        if include_treatments:
+            log_event(
+                logger,
+                "Including treatment analysis in network",
+                tool_name="build_citation_network",
+                request_id=request_id,
+                query_params=query_params,
+                citation_count=len(citing_cases),
+            )
+            classifier = TreatmentClassifier()
+
+            treatments = []
+            for citing_case in citing_cases[:max_nodes]:
+                treatment = classifier.classify_treatment(citing_case, citation)
+                treatments.append(
+                    {
+                        "citing_case": citing_case,
+                        "treatment": treatment.treatment_type.value,
+                        "confidence": treatment.confidence,
+                        "excerpt": treatment.excerpt,
+                    }
+                )
+
+        # Build the network
+        builder = CitationNetworkBuilder(max_depth=max_depth, max_nodes=max_nodes)
+        network = builder.build_network(root_case, citing_cases, treatments)
+
+        # Get statistics
+        statistics = builder.get_network_statistics(network)
+
+        # Convert to JSON-serializable format
         return {
-            "error": f"Could not find case for citation: {citation}",
-            "citation": citation,
-        }
-
-    # Get citing cases
-    citing_cases = await client.find_citing_cases(citation, limit=max_nodes)
-
-    if not citing_cases:
-        return {
-            "root_citation": citation,
+            "root_citation": network.root_citation,
             "root_case_name": root_case.get("caseName"),
             "nodes": [
                 {
-                    "citation": citation,
-                    "case_name": root_case.get("caseName"),
-                    "date_filed": root_case.get("dateFiled"),
-                    "court": root_case.get("court"),
+                    "citation": node.citation,
+                    "case_name": node.case_name,
+                    "date_filed": node.date_filed,
+                    "court": node.court,
+                    "cluster_id": node.cluster_id,
+                    "opinion_ids": node.opinion_ids,
+                    "metadata": node.metadata,
                 }
+                for node in network.nodes.values()
             ],
-            "edges": [],
-            "statistics": {
-                "total_nodes": 1,
-                "total_edges": 0,
-                "message": "No citing cases found",
-            },
-        }
-
-    # Optionally include treatment analysis
-    treatments = None
-    if include_treatments:
-        logger.info("Including treatment analysis in network")
-        classifier = TreatmentClassifier()
-
-        treatments = []
-        for citing_case in citing_cases[:max_nodes]:
-            treatment = classifier.classify_treatment(citing_case, citation)
-            treatments.append(
+            "edges": [
                 {
-                    "citing_case": citing_case,
-                    "treatment": treatment.treatment_type.value,
-                    "confidence": treatment.confidence,
-                    "excerpt": treatment.excerpt,
+                    "from_citation": edge.from_citation,
+                    "to_citation": edge.to_citation,
+                    "depth": edge.depth,
+                    "treatment": edge.treatment,
+                    "confidence": edge.confidence,
+                    "excerpt": edge.excerpt[:200] if edge.excerpt else "",
                 }
-            )
-
-    # Build the network
-    builder = CitationNetworkBuilder(max_depth=max_depth, max_nodes=max_nodes)
-    network = builder.build_network(root_case, citing_cases, treatments)
-
-    # Get statistics
-    statistics = builder.get_network_statistics(network)
-
-    # Convert to JSON-serializable format
-    return {
-        "root_citation": network.root_citation,
-        "root_case_name": root_case.get("caseName"),
-        "nodes": [
-            {
-                "citation": node.citation,
-                "case_name": node.case_name,
-                "date_filed": node.date_filed,
-                "court": node.court,
-                "cluster_id": node.cluster_id,
-                "opinion_ids": node.opinion_ids,
-                "metadata": node.metadata,
-            }
-            for node in network.nodes.values()
-        ],
-        "edges": [
-            {
-                "from_citation": edge.from_citation,
-                "to_citation": edge.to_citation,
-                "depth": edge.depth,
-                "treatment": edge.treatment,
-                "confidence": edge.confidence,
-                "excerpt": edge.excerpt[:200] if edge.excerpt else "",
-            }
-            for edge in network.edges
-        ],
-        "statistics": statistics,
-    }
+                for edge in network.edges
+            ],
+            "statistics": statistics,
+        }
 
 
 async def filter_citation_network_impl(
@@ -123,20 +162,36 @@ async def filter_citation_network_impl(
     date_after: str | None = None,
     date_before: str | None = None,
     max_nodes: int = 100,
+    request_id: str | None = None,
 ) -> dict[str, Any]:
     """Implementation of filter_citation_network."""
-    logger.info(f"Building filtered citation network for {citation}")
+    query_params = {
+        "citation": citation,
+        "treatments": treatments,
+        "min_confidence": min_confidence,
+        "date_after": date_after,
+        "date_before": date_before,
+        "max_nodes": max_nodes,
+    }
 
-    # First build the full network
-    full_network = await build_citation_network_impl(
-        citation=citation,
-        max_depth=1,
-        max_nodes=max_nodes,
-        include_treatments=True,
-    )
+    with log_operation(
+        logger,
+        tool_name="filter_citation_network",
+        request_id=request_id,
+        query_params=query_params,
+        event="filter_citation_network",
+    ):
+        # First build the full network
+        full_network = await build_citation_network_impl(
+            citation=citation,
+            max_depth=1,
+            max_nodes=max_nodes,
+            include_treatments=True,
+            request_id=request_id,
+        )
 
-    if "error" in full_network:
-        return full_network
+        if "error" in full_network:
+            return full_network
 
     # Apply filters
     filtered_edges = []
@@ -181,6 +236,16 @@ async def filter_citation_network_impl(
         if edge["treatment"]:
             treatment_counts[edge["treatment"]] = treatment_counts.get(edge["treatment"], 0) + 1
 
+    log_event(
+        logger,
+        "Filtered citation network computed",
+        tool_name="filter_citation_network",
+        request_id=request_id,
+        query_params=query_params,
+        citation_count=len(filtered_edges),
+        event="filter_citation_network",
+    )
+
     return {
         "root_citation": full_network["root_citation"],
         "root_case_name": full_network["root_case_name"],
@@ -200,17 +265,24 @@ async def filter_citation_network_impl(
     }
 
 
-async def get_network_statistics_impl(citation: str, max_nodes: int = 100) -> dict[str, Any]:
+async def get_network_statistics_impl(
+    citation: str, max_nodes: int = 100, request_id: str | None = None
+) -> dict[str, Any]:
     """Implementation of get_network_statistics."""
-    logger.info(f"Getting network statistics for {citation}")
-
-    # Build network with treatments
-    network = await build_citation_network_impl(
-        citation=citation,
-        max_depth=1,
-        max_nodes=max_nodes,
-        include_treatments=True,
-    )
+    with log_operation(
+        logger,
+        tool_name="get_network_statistics",
+        request_id=request_id,
+        query_params={"citation": citation, "max_nodes": max_nodes},
+        event="get_network_statistics",
+    ):
+        # Build network with treatments
+        network = await build_citation_network_impl(
+            citation=citation,
+            max_depth=1,
+            max_nodes=max_nodes,
+            include_treatments=True,
+        )
 
     if "error" in network:
         return network
@@ -244,6 +316,16 @@ async def get_network_statistics_impl(citation: str, max_nodes: int = 100) -> di
         (citation_count * 0.5) + (treatment_diversity * 10) + (temporal_span * 2),
     )
 
+    log_event(
+        logger,
+        "Network statistics computed",
+        tool_name="get_network_statistics",
+        request_id=request_id,
+        query_params={"citation": citation, "max_nodes": max_nodes},
+        citation_count=citation_count,
+        event="get_network_statistics",
+    )
+
     return {
         "citation": citation,
         "case_name": network["root_case_name"],
@@ -272,25 +354,49 @@ async def visualize_citation_network_impl(
     direction: str = "TB",
     color_by_treatment: bool = True,
     max_nodes: int = 50,
+    request_id: str | None = None,
 ) -> dict[str, Any]:
     """Implementation of visualize_citation_network."""
-    logger.info(f"Generating Mermaid visualization for {citation}")
+    query_params = {
+        "citation": citation,
+        "diagram_type": diagram_type,
+        "direction": direction,
+        "color_by_treatment": color_by_treatment,
+        "max_nodes": max_nodes,
+    }
 
-    # Build the citation network
-    network = await build_citation_network_impl(
-        citation=citation,
-        max_depth=1,
-        max_nodes=max_nodes,
-        include_treatments=True,
-    )
+    with log_operation(
+        logger,
+        tool_name="visualize_citation_network",
+        request_id=request_id,
+        query_params=query_params,
+        event="visualize_citation_network",
+    ):
+        # Build the citation network
+        network = await build_citation_network_impl(
+            citation=citation,
+            max_depth=1,
+            max_nodes=max_nodes,
+            include_treatments=True,
+            request_id=request_id,
+        )
 
-    if "error" in network:
-        return network
+        if "error" in network:
+            return network
 
-    # Generate Mermaid diagrams
-    generator = MermaidGenerator()
+        log_event(
+            logger,
+            "Generating Mermaid diagrams",
+            tool_name="visualize_citation_network",
+            request_id=request_id,
+            query_params=query_params,
+            citation_count=len(network.get("edges", [])),
+        )
 
-    diagrams = {}
+        # Generate Mermaid diagrams
+        generator = MermaidGenerator()
+
+        diagrams = {}
 
     if diagram_type == "flowchart" or diagram_type == "all":
         diagrams["flowchart"] = generator.generate_flowchart(
@@ -339,20 +445,35 @@ async def generate_citation_report_impl(
     include_statistics: bool = True,
     treatment_focus: list[str] | None = None,
     max_nodes: int = 50,
+    request_id: str | None = None,
 ) -> dict[str, Any]:
     """Implementation of generate_citation_report."""
-    logger.info(f"Generating citation report for {citation}")
+    query_params = {
+        "citation": citation,
+        "include_diagram": include_diagram,
+        "include_statistics": include_statistics,
+        "treatment_focus": treatment_focus,
+        "max_nodes": max_nodes,
+    }
 
-    # Build network
-    network = await build_citation_network_impl(
-        citation=citation,
-        max_depth=1,
-        max_nodes=max_nodes,
-        include_treatments=True,
-    )
+    with log_operation(
+        logger,
+        tool_name="generate_citation_report",
+        request_id=request_id,
+        query_params=query_params,
+        event="generate_citation_report",
+    ):
+        # Build network
+        network = await build_citation_network_impl(
+            citation=citation,
+            max_depth=1,
+            max_nodes=max_nodes,
+            include_treatments=True,
+            request_id=request_id,
+        )
 
-    if "error" in network:
-        return network
+        if "error" in network:
+            return network
 
     # Start building report
     report_lines = []
@@ -445,6 +566,7 @@ async def build_citation_network(
     max_depth: int = 2,
     max_nodes: int = 100,
     include_treatments: bool = True,
+    request_id: str | None = None,
 ) -> dict[str, Any]:
     """Build a citation network for a given case.
 
@@ -465,7 +587,9 @@ async def build_citation_network(
         - edges: List of citation edges with treatment info
         - statistics: Network statistics and metrics
     """
-    return await build_citation_network_impl(citation, max_depth, max_nodes, include_treatments)
+    return await build_citation_network_impl(
+        citation, max_depth, max_nodes, include_treatments, request_id=request_id
+    )
 
 
 @network_server.tool()
@@ -476,6 +600,7 @@ async def filter_citation_network(
     date_after: str | None = None,
     date_before: str | None = None,
     max_nodes: int = 100,
+    request_id: str | None = None,
 ) -> dict[str, Any]:
     """Build a filtered citation network showing only specific relationships.
 
@@ -494,12 +619,20 @@ async def filter_citation_network(
         Filtered citation network with nodes and edges matching criteria
     """
     return await filter_citation_network_impl(
-        citation, treatments, min_confidence, date_after, date_before, max_nodes
+        citation,
+        treatments,
+        min_confidence,
+        date_after,
+        date_before,
+        max_nodes,
+        request_id=request_id,
     )
 
 
 @network_server.tool()
-async def get_network_statistics(citation: str, max_nodes: int = 100) -> dict[str, Any]:
+async def get_network_statistics(
+    citation: str, max_nodes: int = 100, request_id: str | None = None
+) -> dict[str, Any]:
     """Get statistical analysis of a citation network.
 
     Provides metrics about case influence, treatment distribution, and network structure.
@@ -516,7 +649,7 @@ async def get_network_statistics(citation: str, max_nodes: int = 100) -> dict[st
         - court_distribution: Which courts cite this case most
         - influence_score: Composite score of case influence
     """
-    return await get_network_statistics_impl(citation, max_nodes)
+    return await get_network_statistics_impl(citation, max_nodes, request_id=request_id)
 
 
 @network_server.tool()
@@ -526,6 +659,7 @@ async def visualize_citation_network(
     direction: str = "TB",
     color_by_treatment: bool = True,
     max_nodes: int = 50,
+    request_id: str | None = None,
 ) -> dict[str, Any]:
     """Generate a Mermaid diagram visualization of a citation network.
 
@@ -547,7 +681,12 @@ async def visualize_citation_network(
         - edge_count: Number of edges in visualization
     """
     return await visualize_citation_network_impl(
-        citation, diagram_type, direction, color_by_treatment, max_nodes
+        citation,
+        diagram_type,
+        direction,
+        color_by_treatment,
+        max_nodes,
+        request_id=request_id,
     )
 
 
@@ -558,6 +697,7 @@ async def generate_citation_report(
     include_statistics: bool = True,
     treatment_focus: list[str] | None = None,
     max_nodes: int = 50,
+    request_id: str | None = None,
 ) -> dict[str, Any]:
     """Generate a comprehensive citation analysis report.
 
@@ -578,5 +718,10 @@ async def generate_citation_report(
         - statistics: Detailed statistics (if include_statistics=True)
     """
     return await generate_citation_report_impl(
-        citation, include_diagram, include_statistics, treatment_focus, max_nodes
+        citation,
+        include_diagram,
+        include_statistics,
+        treatment_focus,
+        max_nodes,
+        request_id=request_id,
     )

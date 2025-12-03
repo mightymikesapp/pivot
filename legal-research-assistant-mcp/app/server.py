@@ -18,6 +18,7 @@ from typing import Any
 from fastmcp import FastMCP
 
 from app.config import settings
+from app.logging_utils import log_event
 from app.tools.network import network_server
 from app.tools.treatment import treatment_server
 from app.tools.verification import verification_server
@@ -44,7 +45,7 @@ def health_check() -> dict[str, Any]:
     Returns:
         Dictionary containing server status and configuration info
     """
-    logger.info("Health check requested")
+    log_event(logger, "Health check requested", tool_name="health_check", event="health_check")
 
     return {
         "status": "healthy",
@@ -82,21 +83,41 @@ def status() -> dict[str, str]:
 
 async def setup() -> None:
     """Set up the server by importing tool modules."""
-    logger.info("Setting up Legal Research Assistant MCP server")
+    log_event(
+        logger,
+        "Setting up Legal Research Assistant MCP server",
+        tool_name="server",
+        event="server_setup",
+    )
 
     # Import treatment analysis tools
     await mcp.import_server(treatment_server)
-    logger.info("Imported treatment analysis tools")
+    log_event(
+        logger,
+        "Imported treatment analysis tools",
+        tool_name="server",
+        event="server_setup",
+    )
 
     # Import quote verification tools
     await mcp.import_server(verification_server)
-    logger.info("Imported quote verification tools")
+    log_event(
+        logger,
+        "Imported quote verification tools",
+        tool_name="server",
+        event="server_setup",
+    )
 
     # Import citation network tools
     await mcp.import_server(network_server)
-    logger.info("Imported citation network analysis tools")
+    log_event(
+        logger,
+        "Imported citation network analysis tools",
+        tool_name="server",
+        event="server_setup",
+    )
 
-    logger.info("Server setup complete")
+    log_event(logger, "Server setup complete", tool_name="server", event="server_setup")
 
 
 # Run setup when module is imported
