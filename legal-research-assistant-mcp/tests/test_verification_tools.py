@@ -39,7 +39,16 @@ def mock_matcher(mocker):
     mock_result.found = True
     mock_result.exact_match = True
     mock_result.similarity = 1.0
-    mock_result.matches = [MagicMock(position=10, matched_text="quote", context_before="", context_after="", differences=[])]
+    mock_result.matches = [
+        MagicMock(
+            position=10,
+            matched_text="quote",
+            context_before="",
+            context_after="",
+            differences=[],
+            exact_match=True,
+        )
+    ]
     mock_result.warnings = []
     mock_result.recommendation = "Good"
 
@@ -67,6 +76,7 @@ async def test_verify_quote_case_not_found(mock_client_funcs):
     result = await verify_quote_impl("quote", "999 U.S. 999")
 
     assert "error" in result
+    assert result["error_code"] == "CASE_NOT_FOUND"
 
 @pytest.mark.asyncio
 async def test_verify_quote_no_opinions(mock_client_funcs):
@@ -80,6 +90,7 @@ async def test_verify_quote_no_opinions(mock_client_funcs):
 
     assert "error" in result
     assert result["error"] == "No opinion text available for this case"
+    assert result["error_code"] == "NO_OPINION_TEXT"
 
 @pytest.mark.asyncio
 async def test_verify_quote_no_text(mock_client_funcs):
@@ -89,6 +100,7 @@ async def test_verify_quote_no_text(mock_client_funcs):
     result = await verify_quote_impl("quote", "100 U.S. 100")
 
     assert "error" in result
+    assert result["error_code"] == "TEXT_RETRIEVAL_FAILED"
     assert result["error"] == "Could not retrieve opinion text"
 
 @pytest.mark.asyncio
@@ -98,6 +110,50 @@ async def test_verify_quote_pinpoint(mock_client_funcs, mock_matcher):
 
     assert "pinpoint_provided" in result
     assert result["pinpoint_provided"] == "at 150"
+    assert "grounding" in result
+
+
+@pytest.mark.asyncio
+async def test_verify_quote_pinpoint_alignment(mock_client_funcs, mock_matcher):
+    """Pinpoint slice should report grounding and alignment metadata."""
+
+    text = "Intro text before marker. Page 12 Target quote appears here in page 12 section."
+    mock_client_funcs.get_opinion_full_text.return_value = text
+
+    def verify_quote_side_effect(quote, source, citation):
+        mock_result = MagicMock()
+        if "Target quote" in source:
+            pos = source.index("Target quote")
+            best_match = MagicMock(
+                position=pos,
+                matched_text="Target quote",
+                context_before=source[max(0, pos - 5) : pos],
+                context_after=source[pos + len("Target quote") : pos + len("Target quote") + 5],
+                differences=[],
+                exact_match=True,
+            )
+            mock_result.matches = [best_match]
+            mock_result.found = True
+            mock_result.exact_match = True
+            mock_result.similarity = 1.0
+        else:
+            mock_result.matches = []
+            mock_result.found = False
+            mock_result.exact_match = False
+            mock_result.similarity = 0.0
+        mock_result.warnings = []
+        mock_result.recommendation = "Good"
+        return mock_result
+
+    mock_matcher.verify_quote.side_effect = verify_quote_side_effect
+
+    result = await verify_quote_impl(
+        "Target quote", "100 U.S. 100", pinpoint="Page 12"
+    )
+
+    assert result["grounding"]["opinion_section_hint"]["method"] == "page_marker"
+    assert result["grounding"]["alignment"]["pinpoint_in_range"] is True
+    assert result["grounding"]["alignment"]["mismatch_reasons"] == []
 
 @pytest.mark.asyncio
 async def test_batch_verify_quotes(mock_client_funcs, mock_matcher):
