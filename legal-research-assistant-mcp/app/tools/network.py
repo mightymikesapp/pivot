@@ -495,6 +495,13 @@ async def visualize_citation_network_impl(
     diagram_type: str = "flowchart",
     direction: str = "TB",
     color_by_treatment: bool = True,
+    color_by_court: bool = True,
+    node_size_by: str | None = None,
+    show_legend: bool = True,
+    court_palette: dict[str, str] | None = None,
+    treatment_palette: dict[str, str] | None = None,
+    include_graphml: bool = False,
+    include_json: bool = False,
     max_nodes: int = 50,
     request_id: str | None = None,
 ) -> dict[str, Any]:
@@ -504,6 +511,11 @@ async def visualize_citation_network_impl(
         "diagram_type": diagram_type,
         "direction": direction,
         "color_by_treatment": color_by_treatment,
+        "color_by_court": color_by_court,
+        "node_size_by": node_size_by,
+        "show_legend": show_legend,
+        "include_graphml": include_graphml,
+        "include_json": include_json,
         "max_nodes": max_nodes,
     }
 
@@ -546,6 +558,11 @@ async def visualize_citation_network_impl(
             direction=direction,
             include_dates=True,
             color_by_treatment=color_by_treatment,
+            color_by_court=color_by_court,
+            node_size_by=node_size_by,
+            court_palette=court_palette,
+            treatment_palette=treatment_palette,
+            show_legend=show_legend,
         )
 
     if diagram_type == "graph" or diagram_type == "all":
@@ -553,6 +570,10 @@ async def visualize_citation_network_impl(
             network,
             direction=direction,
             show_treatments=True,
+            color_by_court=color_by_court,
+            node_size_by=node_size_by,
+            court_palette=court_palette,
+            show_legend=show_legend,
         )
 
     if diagram_type == "timeline" or diagram_type == "all":
@@ -560,6 +581,9 @@ async def visualize_citation_network_impl(
 
     # Generate summary
     summary = generator.generate_summary_stats(network)
+
+    graphml = generator.generate_graphml(network) if include_graphml else None
+    json_graph = generator.generate_json_graph(network) if include_json else None
 
     # Get the primary diagram
     primary_diagram = diagrams.get(diagram_type, diagrams.get("flowchart", ""))
@@ -569,6 +593,8 @@ async def visualize_citation_network_impl(
         "case_name": network["root_case_name"],
         "mermaid_syntax": primary_diagram,
         "all_diagrams": diagrams if diagram_type == "all" else None,
+        "graphml": graphml,
+        "json_graph": json_graph,
         "summary_stats": summary,
         "node_count": len(network["nodes"]),
         "edge_count": len(network["edges"]),
@@ -576,7 +602,10 @@ async def visualize_citation_network_impl(
             "To use in Obsidian:\n"
             "1. Copy the mermaid_syntax\n"
             "2. Paste in your note between ```mermaid and ``` tags\n"
-            "3. The diagram will render automatically"
+            "3. The diagram will render automatically\n\n"
+            "Additional options: set node_size_by to 'citation' or 'authority' for emphasis,\n"
+            "toggle color_by_court/color_by_treatment to change palettes,\n"
+            "and enable include_graphml/include_json for exports to other tools."
         ),
     }
 
