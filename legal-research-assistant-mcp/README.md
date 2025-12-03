@@ -418,6 +418,7 @@ legal-research-assistant-mcp/
 1) **Reliability and hygiene**
 - [ ] Tighten repository hygiene (.gitignore coverage, clearer defaults)
 - [ ] Centralize configuration with .env/env vars for CourtListener, timeouts, retries, and cache controls
+- [ ] Lazily initialize resource-intensive dependencies (e.g., semantic search vector store) to avoid import-time side effects
 - [ ] Implement structured logging with correlation/request metadata and tool context
 
 2) **Quality gates and repeatability**

@@ -8,6 +8,7 @@ This module implements the "Smart Scout" strategy:
 """
 
 import logging
+from typing import Any, Optional
 from typing import TYPE_CHECKING, Any
 
 from fastmcp import FastMCP
@@ -20,6 +21,7 @@ if TYPE_CHECKING:  # pragma: no cover - for type checkers only
 # Initialize tool
 search_server = FastMCP("Legal Research Search")
 
+_vector_store: Optional[LegalVectorStore] = None
 _vector_store: "LegalVectorStore | None" = None
 
 
