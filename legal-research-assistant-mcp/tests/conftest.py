@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
+from _pytest.python import Function
 
 
 # Ensure the repository root is on the import path so ``app`` can be imported
@@ -22,7 +23,8 @@ def pytest_configure(config):
 
 @pytest.fixture
 def mock_client(mocker):
-    """Mock the CourtListener client."""
+    """Mock the CourtListener client and patch common access points."""
+
     client_mock = AsyncMock()
 
     # Common mock data
@@ -32,17 +34,16 @@ def mock_client(mocker):
         "dateFiled": "1973-01-22",
         "court": "scotus",
         "cluster_id": 12345,
-        "opinions": [{"id": 111}]
+        "opinions": [{"id": 111}],
     }
 
     citing_case = {
         "caseName": "Planned Parenthood v. Casey",
         "citation": ["505 U.S. 833"],
         "dateFiled": "1992-06-29",
-        "opinions": [{"id": 222}]
+        "opinions": [{"id": 222}],
     }
 
-    # Mock lookup_citation
     client_mock.lookup_citation.return_value = roe_case
 
     # Mock find_citing_cases
@@ -66,16 +67,74 @@ def mock_client(mocker):
     # Mock get_opinion
     client_mock.get_opinion.return_value = {
         "plain_text": "Full text of the opinion...",
-        "html_lawbox": "<p>HTML content</p>"
+        "html_lawbox": "<p>HTML content</p>",
     }
 
-    # Patch get_client in common locations
+    # Patch get_client in common modules
     mocker.patch("app.mcp_client.get_client", return_value=client_mock)
     mocker.patch("app.tools.treatment.get_client", return_value=client_mock)
     mocker.patch("app.tools.verification.get_client", return_value=client_mock)
     mocker.patch("app.tools.network.get_client", return_value=client_mock)
 
     return client_mock
+
+
+@pytest.fixture
+def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
+    """Provide a fresh event loop for async tests."""
+    loop = asyncio.new_event_loop()
+    try:
+        yield loop
+    finally:
+        loop.close()
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Register ini options expected by asyncio-aware tests."""
+    parser.addini(
+        "asyncio_mode",
+        "Asyncio execution mode (provided for compatibility with pytest-asyncio)",
+        default="auto",
+    )
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_configure(config: pytest.Config) -> None:
+    """Register custom markers used in the test suite."""
+    config.addinivalue_line("markers", "asyncio: mark a coroutine test")
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_pycollect_makeitem(collector: pytest.Collector, name: str, obj: object):
+    """Collect coroutine test functions as regular pytest functions."""
+    if inspect.iscoroutinefunction(obj) and name.startswith("test"):
+        return [Function.from_parent(collector, name=name, callobj=obj)]
+    return None
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_pyfunc_call(pyfuncitem: pytest.Function) -> bool | None:
+    """Execute coroutine tests using an event loop."""
+    test_obj = pyfuncitem.obj
+    if not inspect.iscoroutinefunction(test_obj):
+        return None
+
+    loop: asyncio.AbstractEventLoop | None = pyfuncitem.funcargs.get("event_loop")  # type: ignore[attr-defined]
+    created_loop = False
+
+    if loop is None:
+        loop = asyncio.new_event_loop()
+        created_loop = True
+
+    try:
+        asyncio.set_event_loop(loop)
+        kwargs = {name: pyfuncitem.funcargs[name] for name in pyfuncitem._fixtureinfo.argnames}
+        loop.run_until_complete(test_obj(**kwargs))
+    finally:
+        if created_loop:
+            loop.close()
+        asyncio.set_event_loop(None)
+    return True
 
 
 def pytest_collection_modifyitems(config, items):

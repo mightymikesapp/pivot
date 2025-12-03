@@ -3,7 +3,8 @@
 from pathlib import Path
 
 from pydantic import AliasChoices, Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.settings_base import BaseSettings, SettingsConfigDict
 
 from app.logging_config import configure_logging
 
@@ -80,6 +81,10 @@ class Settings(BaseSettings):
     courtlistener_ttl_search: int = Field(
         default=3600,  # 1 hour
         description="TTL (seconds) for search results",
+    )
+    courtlistener_search_cache_enabled: bool = Field(
+        default=True,
+        description="Enable or disable caching for search endpoints",
     )
 
     # Server configuration

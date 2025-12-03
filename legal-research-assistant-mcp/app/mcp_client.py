@@ -13,9 +13,9 @@ from typing import Any, Iterable
 import httpx
 from tenacity import AsyncRetrying, RetryError, retry_if_exception, stop_after_attempt, wait_exponential
 
-from app.cache import CacheType, get_cache_manager
-from app.logging_utils import log_event, log_operation
+from app.cache import CacheManager, CacheType, get_cache_manager
 from app.config import Settings, get_settings
+from app.logging_utils import log_event, log_operation
 
 logger = logging.getLogger(__name__)
 
@@ -201,9 +201,10 @@ class CourtListenerClient:
             event="courtlistener_search",
         ):
             # Check cache
-            cached_result = self.cache_manager.get(CacheType.SEARCH, params)
-            if cached_result is not None:
-                return cached_result
+            if self.settings.courtlistener_search_cache_enabled:
+                cached_result = self.cache_manager.get(CacheType.SEARCH, params)
+                if cached_result is not None:
+                    return cached_result
 
             try:
                 response = await self._request(
@@ -214,8 +215,8 @@ class CourtListenerClient:
                 )
                 result = response.json()
 
-                # Write cache
-                self.cache_manager.set(CacheType.SEARCH, params, result)
+                if self.settings.courtlistener_search_cache_enabled:
+                    self.cache_manager.set(CacheType.SEARCH, params, result)
 
                 log_event(
                     logger,
@@ -273,6 +274,7 @@ class CourtListenerClient:
 
                 # Write cache
                 self.cache_manager.set(CacheType.METADATA, cache_key, data)
+                self._write_cache(f"opinion_{opinion_id}", data)
 
                 log_event(
                     logger,
@@ -395,7 +397,7 @@ class CourtListenerClient:
         cache_key = {"citation_lookup": citation}
         cached_result = self.cache_manager.get(CacheType.SEARCH, cache_key)
         if cached_result:
-             return cached_result
+            return cached_result
 
         with log_operation(
             logger,
@@ -451,7 +453,8 @@ class CourtListenerClient:
                     )
                     result_to_return = data["results"][0]
 
-                self.cache_manager.set(CacheType.SEARCH, cache_key, result_to_return)
+                if self.settings.courtlistener_search_cache_enabled:
+                    self.cache_manager.set(CacheType.SEARCH, cache_key, result_to_return)
                 return result_to_return
 
             except httpx.HTTPError as e:
@@ -627,6 +630,49 @@ class CourtListenerClient:
                 "incomplete_data": incomplete_data,
                 "confidence": confidence,
             }
+
+    def _cache_path(self, key: str) -> Path:
+        """Return the filesystem path for a legacy cache key."""
+
+        safe_key = key.replace("/", "_")
+        return self.cache_dir / f"{safe_key}.json"
+
+    def _read_cache(self, key: str) -> Any | None:
+        """Read cached JSON content for backward compatibility tests."""
+
+        path = self._cache_path(key)
+        if not path.exists():
+            return None
+
+        age = time.time() - path.stat().st_mtime
+        if age > self.cache_ttl:
+            try:
+                path.unlink()
+            except OSError:
+                pass
+            return None
+
+        try:
+            with path.open("r", encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, json.JSONDecodeError):
+            try:
+                path.unlink()
+            except OSError:
+                pass
+            return None
+
+    def _write_cache(self, key: str, data: Any) -> None:
+        """Write JSON data to the legacy cache path."""
+
+        path = self._cache_path(key)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("w", encoding="utf-8") as f:
+                json.dump(data, f)
+        except OSError:
+            # Swallow cache write errors
+            return
 
 
 # Global client instance

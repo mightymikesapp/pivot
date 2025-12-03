@@ -23,20 +23,20 @@ if TYPE_CHECKING:  # pragma: no cover - for type checkers only
 # Initialize tool
 search_server = FastMCP("Legal Research Search")
 
-_vector_store: "LegalVectorStore | None" = None
+vector_store: "LegalVectorStore | None" = None
 
 
 def get_vector_store() -> LegalVectorStore:
     """Lazily initialize and return the LegalVectorStore instance."""
-    global _vector_store
+    global vector_store
 
-    if _vector_store is None:
+    if vector_store is None:
         # Use a data directory in the project root
         from app.analysis.search.vector_store import LegalVectorStore
 
-        _vector_store = LegalVectorStore(persistence_path="./data/chroma_db")
+        vector_store = LegalVectorStore(persistence_path="./data/chroma_db")
 
-    return _vector_store
+    return vector_store
 
 logger = logging.getLogger(__name__)
 
