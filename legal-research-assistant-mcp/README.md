@@ -67,19 +67,14 @@ This MCP uses the **Wrapper/Orchestrator Pattern**, calling the CourtListener AP
 └─────────────────────────────────────────┘
 ```
 
-## 🚀 Installation
+## 🚀 Quickstart
 
-### Prerequisites
-
-- Python 3.12+
-- [uv](https://github.com/astral-sh/uv) for dependency management
-- CourtListener API key (free at courtlistener.com)
-
-### Setup
+The project uses [uv](https://github.com/astral-sh/uv) for dependency management and Python 3.12+.
 
 ```bash
-# Navigate to project directory
-cd /Users/mikesapp/Desktop/legal-research-assistant-mcp
+# Clone and enter the repository
+git clone https://github.com/mightymikesapp/legal-research-assistant-mcp.git
+cd legal-research-assistant-mcp
 
 # Install dependencies
 uv sync
@@ -87,13 +82,23 @@ uv sync
 # Copy environment configuration template and customize
 cp .env.example .env
 
-# Add your CourtListener API key (or COURTLISTENER_API_KEY) to .env
+# Add your CourtListener API key (either alias works)
 echo "COURT_LISTENER_API_KEY=your_key_here" >> .env
 ```
 
-### Configuration
+### 🚀 Running the Server
 
-Use `.env.example` as a reference for available settings and copy it to `.env` to get started. Key options include:
+```bash
+# Start the MCP server
+uv run python -m app.server
+
+# Or launch via the MCP CLI (e.g., Claude Desktop)
+# The server will be available as "Legal Research Assistant MCP"
+```
+
+## ⚙️ Configuration
+
+Use `.env.example` as a reference for available settings. Key options include:
 
 - `COURT_LISTENER_API_KEY` / `COURTLISTENER_API_KEY` aliases for the CourtListener API key
 - Connection, timeout, and retry settings for CourtListener requests
@@ -102,16 +107,6 @@ Use `.env.example` as a reference for available settings and copy it to `.env` t
 - Analysis limits such as confidence thresholds, citing-case limits, full-text fetch counts, and network depth
 
 After copying the template, adjust values in `.env` to match your environment and preferences.
-
-### Running the Server
-
-```bash
-# Run directly
-uv run python -m app.server
-
-# Or use the MCP CLI (if integrated with Claude Desktop)
-# The server will be available as "Legal Research Assistant MCP"
-```
 
 ## 🛠️ Available Tools
 
@@ -333,23 +328,14 @@ with open("roe_citation_report.md", "w") as f:
 
 ## 🧪 Testing
 
-Run the test scripts to verify functionality:
+Run the automated suites with uv:
 
 ```bash
-# Test case validity checking
-uv run python test_validity_check.py
+# Fast unit suite (default)
+uv run pytest
 
-# Test quote verification
-uv run python test_quote_verification.py
-
-# Test visualization
-uv run python test_visualization.py
-
-# Test specific case lookup
-uv run python test_case_lookup.py
-
-# Inspect opinion text
-uv run python test_roe_text.py
+# Full suite including integration checks (requires COURTLISTENER_API_KEY)
+uv run pytest --run-integration
 ```
 
 ## 📁 Project Structure
@@ -359,24 +345,29 @@ legal-research-assistant-mcp/
 ├── app/
 │   ├── __init__.py
 │   ├── __main__.py           # Entry point
-│   ├── server.py             # Main MCP server
+│   ├── cache.py              # Cache utilities and interfaces
 │   ├── config.py             # Configuration with Pydantic
+│   ├── logging_utils.py      # Structured logging helpers
 │   ├── mcp_client.py         # CourtListener API client
+│   ├── server.py             # Main MCP server
 │   ├── tools/                # MCP tool implementations
+│   │   ├── cache_tools.py    # Cache management helpers
+│   │   ├── network.py        # Citation network tools
+│   │   ├── research.py       # Research workflow helpers
+│   │   ├── search.py         # Opinion search helpers
 │   │   ├── treatment.py      # Treatment analysis tools
-│   │   ├── verification.py   # Quote verification tools
-│   │   └── network.py        # Citation network tools
+│   │   └── verification.py   # Quote verification tools
 │   └── analysis/             # Core analysis modules
-│       ├── treatment_classifier.py   # Signal detection & classification
-│       ├── quote_matcher.py          # Quote matching with fuzzy search
 │       ├── citation_network.py       # Network graph construction
-│       └── mermaid_generator.py      # Mermaid diagram generation
-├── tests/
-│   ├── test_validity_check.py
-│   ├── test_quote_verification.py
-│   ├── test_visualization.py
-│   ├── test_case_lookup.py
-│   └── test_roe_text.py
+│       ├── mermaid_generator.py      # Mermaid diagram generation
+│       ├── quote_matcher.py          # Quote matching with fuzzy search
+│       └── treatment_classifier.py   # Signal detection & classification
+├── tests/                   # Pytest suites
+│   ├── test_cache.py
+│   ├── test_mcp_client.py
+│   ├── test_network_tools.py
+│   ├── test_search_tool.py
+│   └── ...
 ├── pyproject.toml           # Python package configuration
 ├── .env.example             # Environment template
 ├── .gitignore
@@ -481,7 +472,7 @@ If you use this tool in academic work, please cite:
   year = {2025},
   description = {Advanced legal research MCP with treatment analysis,
                  citation networks, and quote verification},
-  url = {https://github.com/mightymikesapp/pivot/legal-research-assistant-mcp}
+  url = {https://github.com/mightymikesapp/legal-research-assistant-mcp}
 }
 ```
 
