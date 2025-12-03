@@ -7,6 +7,8 @@ This module implements the "Smart Scout" strategy:
 4. Perform semantic search to re-rank and find best matches
 """
 
+from __future__ import annotations
+
 import logging
 from typing import TYPE_CHECKING, Any
 
