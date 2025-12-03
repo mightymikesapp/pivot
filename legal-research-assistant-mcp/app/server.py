@@ -20,6 +20,7 @@ from fastmcp import FastMCP
 from app.config import settings
 from app.logging_config import tool_logging
 from app.logging_utils import log_event
+from app.mcp_types import ToolPayload
 from app.tools.cache_tools import cache_server
 from app.tools.network import network_server
 from app.tools.research import research_server
@@ -31,7 +32,7 @@ from app.tools.verification import verification_server
 logger = logging.getLogger(__name__)
 
 # Initialize FastMCP server
-mcp: FastMCP[Any] = FastMCP(
+mcp: FastMCP[ToolPayload] = FastMCP(
     name="Legal Research Assistant MCP",
     instructions=(
         "Advanced legal research MCP providing treatment analysis, citation network visualization, "

@@ -168,10 +168,10 @@ class CitationNetworkBuilder:
         """
         citations = case.get("citation", [])
         if isinstance(citations, list) and citations:
-            return citations[0]
-        elif isinstance(citations, str):
+            return str(citations[0])
+        if isinstance(citations, str):
             return citations
-        return case.get("cluster_id", "unknown")
+        return str(case.get("cluster_id", "unknown"))
 
     def _create_node(self, case: dict[str, Any]) -> CaseNode:
         """Create a case node from CourtListener case data.
@@ -212,7 +212,7 @@ class CitationNetworkBuilder:
             Dictionary with network statistics
         """
         # Count treatments
-        treatment_counts = defaultdict(int)
+        treatment_counts: defaultdict[str, int] = defaultdict(int)
         for edge in network.edges:
             if edge.treatment:
                 treatment_counts[edge.treatment] += 1

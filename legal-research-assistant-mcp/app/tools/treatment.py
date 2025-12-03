@@ -14,6 +14,7 @@ from app.config import settings
 from app.logging_config import tool_logging
 from app.logging_utils import log_event, log_operation
 from app.mcp_client import get_client
+from app.mcp_types import ToolPayload
 
 logger = logging.getLogger(__name__)
 
@@ -320,7 +321,7 @@ async def get_citing_cases_impl(
 
 
 # Create treatment tools server
-treatment_server = FastMCP(
+treatment_server: FastMCP[ToolPayload] = FastMCP(
     name="Treatment Analysis Tools",
     instructions="Tools for analyzing case treatment and validity (Shepardizing alternative)",
 )

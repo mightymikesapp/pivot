@@ -15,10 +15,11 @@ from app.mcp_client import get_client
 from app.tools.network import build_citation_network_impl
 from app.tools.treatment import check_case_validity_impl
 from app.tools.verification import batch_verify_quotes_impl
+from app.mcp_types import ToolPayload
 
 logger = logging.getLogger(__name__)
 
-research_server = FastMCP[Any](
+research_server: FastMCP[ToolPayload] = FastMCP(
     name="Research Workflow Tools",
     instructions=(
         "Coordinated research tools that assemble citation lookups, treatment analysis, "
