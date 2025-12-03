@@ -6,16 +6,40 @@ API directly since MCP-to-MCP communication patterns are still evolving.
 """
 
 import asyncio
+from datetime import datetime, timedelta
 import logging
-from typing import Any
+from typing import Any, Iterable
 
 import httpx
+from tenacity import AsyncRetrying, RetryError, retry_if_exception, stop_after_attempt, wait_exponential
 
 from app.cache import CacheType, get_cache_manager
 from app.logging_utils import log_event, log_operation
 from app.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
+
+
+class CircuitBreakerOpenError(httpx.RequestError):
+    """Raised when the circuit breaker is open."""
+
+    def __init__(self, request: httpx.Request | None = None):
+        super().__init__("Circuit breaker open", request=request)
+
+
+class CitingCasesResult(list[dict[str, Any]]):
+    """List-like result with metadata for citing cases queries."""
+
+    def __init__(
+        self,
+        iterable: Iterable[dict[str, Any]] | None = None,
+        *,
+        failed_requests: list[dict[str, Any]] | None = None,
+        confidence: float = 1.0,
+    ) -> None:
+        super().__init__(iterable or [])
+        self.failed_requests = failed_requests or []
+        self.confidence = confidence
 
 
 class CourtListenerClient:
@@ -29,11 +53,16 @@ class CourtListenerClient:
         self.api_key = self.settings.courtlistener_api_key
         self.retry_attempts = max(1, self.settings.courtlistener_retry_attempts)
         self.backoff = self.settings.courtlistener_retry_backoff
+        self.failure_count = 0
+        self.circuit_open_until: datetime | None = None
         self.cache_manager = get_cache_manager()
 
-        self.client = httpx.AsyncClient(
-            base_url=self.base_url, timeout=self.settings.courtlistener_timeout
+        timeout = httpx.Timeout(
+            timeout=self.settings.courtlistener_timeout,
+            connect=self.settings.courtlistener_connect_timeout,
+            read=self.settings.courtlistener_read_timeout,
         )
+        self.client = httpx.AsyncClient(base_url=self.base_url, timeout=timeout)
 
         if self.api_key:
             logger.info("CourtListener API key found")
@@ -55,34 +84,59 @@ class CourtListenerClient:
             headers["Authorization"] = f"Token {self.api_key}"
         return headers
 
+    def _circuit_open(self) -> bool:
+        return self.circuit_open_until is not None and datetime.utcnow() < self.circuit_open_until
+
+    def _record_failure(self) -> None:
+        self.failure_count += 1
+        if self.failure_count >= 5:
+            self.circuit_open_until = datetime.utcnow() + timedelta(seconds=60)
+
+    def _record_success(self) -> None:
+        self.failure_count = 0
+        self.circuit_open_until = None
+
     async def _request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
-        """Perform an HTTP request with retry and backoff."""
+        """Perform an HTTP request with retry, backoff, and circuit breaker."""
 
-        last_exc: Exception | None = None
-        for attempt in range(1, self.retry_attempts + 1):
-            try:
-                response = await self.client.request(method, url, **kwargs)
-                response.raise_for_status()
-                return response
-            except (httpx.RequestError, httpx.HTTPStatusError) as exc:
-                last_exc = exc
-                status = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
-                should_retry = attempt < self.retry_attempts and (status is None or status >= 500)
+        if self._circuit_open():
+            raise CircuitBreakerOpenError()
 
-                logger.warning(
-                    "CourtListener request failed (attempt %s/%s): %s", attempt, self.retry_attempts, exc
-                )
+        async def _do_request() -> httpx.Response:
+            response = await self.client.request(method, url, **kwargs)
+            response.raise_for_status()
+            return response
 
-                if not should_retry:
-                    logger.error("CourtListener request failed without remaining retries")
-                    raise
+        def _should_retry(exc: BaseException) -> bool:
+            if isinstance(exc, CircuitBreakerOpenError):
+                return False
+            if isinstance(exc, httpx.HTTPStatusError):
+                return exc.response.status_code in {429, 500, 502, 503, 504}
+            return isinstance(exc, httpx.RequestError)
 
-                backoff_time = self.backoff * (2 ** (attempt - 1))
-                await asyncio.sleep(backoff_time)
+        retrying = AsyncRetrying(
+            retry=retry_if_exception(_should_retry),
+            stop=stop_after_attempt(self.retry_attempts),
+            wait=wait_exponential(multiplier=self.backoff, min=self.backoff, max=30),
+            reraise=True,
+        )
 
-        if last_exc:
-            raise last_exc
-        raise RuntimeError("Request failed without raising an exception")
+        try:
+            async for attempt in retrying:
+                with attempt:
+                    response = await _do_request()
+                    self._record_success()
+                    return response
+        except RetryError as exc:
+            last_exc = exc.last_attempt.exception()
+            if last_exc:
+                if not isinstance(last_exc, CircuitBreakerOpenError):
+                    self._record_failure()
+                raise last_exc
+            raise
+        except Exception:
+            self._record_failure()
+            raise
 
     async def search_opinions(
         self,
@@ -417,7 +471,7 @@ class CourtListenerClient:
         citation: str,
         limit: int = 100,
         request_id: str | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> CitingCasesResult:
         """Find cases that cite a given citation.
 
         Args:
@@ -430,13 +484,14 @@ class CourtListenerClient:
         cache_key = {"citing_cases": citation, "limit": limit}
         cached_results = self.cache_manager.get(CacheType.SEARCH, cache_key)
         if cached_results is not None:
-            return cached_results
+            return CitingCasesResult(cached_results)
 
         query_attempts = [
             f'"{citation}"',  # Simple quoted search - finds cases mentioning citation
             citation,  # Unquoted
         ]
 
+        failed_requests: list[dict[str, Any]] = []
         with log_operation(
             logger,
             tool_name="find_citing_cases",
@@ -470,7 +525,12 @@ class CourtListenerClient:
                             citation_count=len(results),
                             event="find_citing_cases_success",
                         )
-                        return results
+                        confidence = 1.0 if not failed_requests else 0.6
+                        return CitingCasesResult(
+                            results,
+                            failed_requests=failed_requests,
+                            confidence=confidence,
+                        )
                     else:
                         log_event(
                             logger,
@@ -491,6 +551,14 @@ class CourtListenerClient:
                         query_params=params,
                         event="find_citing_cases_retry_error",
                     )
+                    failed_requests.append(
+                        {
+                            "query": query,
+                            "params": params,
+                            "error": str(e),
+                            "status": getattr(e.response, "status_code", None),
+                        }
+                    )
                     continue
 
             # If all attempts failed, return empty list with log
@@ -503,7 +571,7 @@ class CourtListenerClient:
                 query_params={"citation": citation, "limit": limit},
                 event="find_citing_cases_error",
             )
-            return []
+            return CitingCasesResult([], failed_requests=failed_requests, confidence=0.3)
 
 
 # Global client instance
