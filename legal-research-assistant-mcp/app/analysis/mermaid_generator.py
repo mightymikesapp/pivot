@@ -10,6 +10,7 @@ import logging
 from collections import defaultdict
 from html import escape
 from itertools import cycle
+from typing import Any
 
 from app.types import CitationNetworkResult
 

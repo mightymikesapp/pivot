@@ -13,6 +13,7 @@ from ..logging_config import tool_logging
 from ..logging_utils import log_event, log_operation
 from ..mcp_client import get_client
 from ..mcp_types import ToolPayload
+from ..types import CitationNetworkResult, CourtListenerCase
 
 logger = logging.getLogger(__name__)
 

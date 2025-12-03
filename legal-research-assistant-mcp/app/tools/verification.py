@@ -16,6 +16,7 @@ from app.logging_config import tool_logging
 from app.logging_utils import log_event, log_operation
 from app.mcp_client import get_client
 from app.mcp_types import ToolPayload
+from app.types import QuoteVerificationResult
 
 logger = logging.getLogger(__name__)
 

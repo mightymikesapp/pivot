@@ -5,15 +5,17 @@ serving as a free alternative to Shepard's Citations and KeyCite.
 """
 
 import logging
+from typing import Any
 
 from fastmcp import FastMCP
 
-from app.analysis.treatment_classifier import TreatmentClassifier
+from app.analysis.treatment_classifier import TreatmentAnalysis, TreatmentClassifier
 from app.config import settings
 from app.logging_config import tool_logging
 from app.logging_utils import log_event, log_operation
 from app.mcp_client import get_client
 from app.mcp_types import ToolPayload
+from app.types import CourtListenerCase, TreatmentResult
 
 logger = logging.getLogger(__name__)
 

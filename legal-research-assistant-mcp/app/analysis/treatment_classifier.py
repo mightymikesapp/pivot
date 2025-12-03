@@ -11,6 +11,8 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 
+from app.types import CourtListenerCase
+
 logger = logging.getLogger(__name__)
 
 
@@ -507,4 +509,3 @@ class TreatmentClassifier:
             f"Case cited {positive_count + negative_count + neutral_count} times "
             f"with no significant negative treatment."
         )
-from app.types import CourtListenerCase
