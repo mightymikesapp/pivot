@@ -1,6 +1,23 @@
+import asyncio
+import inspect
+import sys
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
+
+
+# Ensure the repository root is on the import path so ``app`` can be imported
+# without requiring callers to set PYTHONPATH manually.
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+
+def pytest_configure(config):
+    """Register common markers to silence unknown-marker warnings."""
+
+    config.addinivalue_line("markers", "asyncio: mark a test as asyncio-enabled")
 
 
 @pytest.fixture
@@ -69,3 +86,24 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if not any(mark.name == "integration" for mark in item.iter_markers()):
             item.add_marker(unit_marker)
+
+
+def pytest_pyfunc_call(pyfuncitem):
+    """Allow async tests to run even if pytest-asyncio plugin is unavailable.
+
+    When the asyncio plugin is present we defer to it; otherwise we manually run
+    coroutine tests with ``asyncio.run`` so that async test suites can execute
+    in constrained environments.
+    """
+
+    # If pytest-asyncio is installed, let it handle async tests.
+    if pyfuncitem.config.pluginmanager.hasplugin("asyncio"):
+        return None
+
+    testfunction = pyfuncitem.obj
+
+    if inspect.iscoroutinefunction(testfunction):
+        asyncio.run(testfunction(**pyfuncitem.funcargs))
+        return True
+
+    return None
