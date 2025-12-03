@@ -55,6 +55,14 @@ class Settings(BaseSettings):
         default=3600,
         description="Time-to-live (seconds) for cached CourtListener responses",
     )
+    courtlistener_search_cache_enabled: bool = Field(
+        default=True,
+        description="Whether to cache search_opinions responses",
+    )
+    courtlistener_citing_cache_enabled: bool = Field(
+        default=True,
+        description="Whether to cache find_citing_cases responses",
+    )
 
     # Server configuration
     log_level: str = Field(default="INFO", description="Logging level")
