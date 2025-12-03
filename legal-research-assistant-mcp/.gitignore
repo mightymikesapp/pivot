@@ -4,6 +4,7 @@ __pycache__/
 
 # Test artifacts
 .pytest_cache/
+.mypy_cache/
 
 # Application caches and runtime data
 .cache/
