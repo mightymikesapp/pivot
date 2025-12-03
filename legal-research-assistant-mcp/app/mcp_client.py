@@ -471,7 +471,7 @@ class CourtListenerClient:
         citation: str,
         limit: int = 100,
         request_id: str | None = None,
-    ) -> CitingCasesResult:
+    ) -> dict[str, Any]:
         """Find cases that cite a given citation.
 
         Args:
@@ -499,6 +499,11 @@ class CourtListenerClient:
             query_params={"citation": citation, "limit": limit},
             event="find_citing_cases",
         ):
+            aggregated_results: list[dict[str, Any]] = []
+            failed_requests: list[dict[str, Any]] = []
+            warnings: list[str] = []
+            confidence = 1.0
+
             for query in query_attempts:
                 params = {
                     "q": query,
@@ -515,7 +520,7 @@ class CourtListenerClient:
                     data = response.json()
                     results = data.get("results", [])
                     if results:
-                        self.cache_manager.set(CacheType.SEARCH, cache_key, results)
+                        aggregated_results.extend(results)
                         log_event(
                             logger,
                             "Found citing cases",
@@ -525,16 +530,16 @@ class CourtListenerClient:
                             citation_count=len(results),
                             event="find_citing_cases_success",
                         )
-                        confidence = 1.0 if not failed_requests else 0.6
-                        return CitingCasesResult(
-                            results,
-                            failed_requests=failed_requests,
-                            confidence=confidence,
-                        )
+                        if len(aggregated_results) >= limit:
+                            break
                     else:
+                        warning_msg = (
+                            f"Query '{query}' yielded no results; continuing with fallback searches."
+                        )
+                        warnings.append(warning_msg)
                         log_event(
                             logger,
-                            f"Query '{query}' yielded no results, trying next...",
+                            warning_msg,
                             level=logging.WARNING,
                             tool_name="find_citing_cases",
                             request_id=request_id,
@@ -542,9 +547,23 @@ class CourtListenerClient:
                             event="find_citing_cases_retry",
                         )
                 except httpx.HTTPError as e:
+                    status_code = (
+                        e.response.status_code if isinstance(e, httpx.HTTPStatusError) else None
+                    )
+                    failed_requests.append(
+                        {
+                            "url": f"{self.base_url}search/",
+                            "params": params,
+                            "status": status_code,
+                            "message": str(e),
+                        }
+                    )
+                    confidence = max(confidence - 0.2, 0.3)
+                    warning_msg = f"Query '{query}' failed with error: {e}; continuing with fallback searches."
+                    warnings.append(warning_msg)
                     log_event(
                         logger,
-                        f"Query '{query}' failed with error: {e}, trying next...",
+                        warning_msg,
                         level=logging.ERROR,
                         tool_name="find_citing_cases",
                         request_id=request_id,
@@ -561,17 +580,53 @@ class CourtListenerClient:
                     )
                     continue
 
-            # If all attempts failed, return empty list with log
+            # Deduplicate results while preserving order
+            seen_ids: set[Any] = set()
+            deduped_results: list[dict[str, Any]] = []
+            for result in aggregated_results:
+                identifier = result.get("id") or result.get("absolute_url") or id(result)
+                if identifier in seen_ids:
+                    continue
+                seen_ids.add(identifier)
+                deduped_results.append(result)
+
+            if deduped_results:
+                deduped_results = deduped_results[:limit]
+                self.cache_manager.set(
+                    CacheType.SEARCH,
+                    cache_key,
+                    {
+                        "results": deduped_results,
+                        "warnings": warnings,
+                        "failed_requests": failed_requests,
+                        "incomplete_data": bool(failed_requests),
+                        "confidence": confidence,
+                    },
+                )
+
+            incomplete_data = bool(failed_requests)
+            if not deduped_results:
+                warnings.append("No citing cases were found across all query attempts.")
+                incomplete_data = True
+                confidence = min(confidence, 0.5)
+
             log_event(
                 logger,
-                f"All query attempts failed for citation: {citation}",
-                level=logging.ERROR,
+                "Completed citing case search",
                 tool_name="find_citing_cases",
                 request_id=request_id,
                 query_params={"citation": citation, "limit": limit},
-                event="find_citing_cases_error",
+                citation_count=len(deduped_results),
+                event="find_citing_cases_complete",
             )
-            return CitingCasesResult([], failed_requests=failed_requests, confidence=0.3)
+
+            return {
+                "results": deduped_results,
+                "warnings": warnings,
+                "failed_requests": failed_requests,
+                "incomplete_data": incomplete_data,
+                "confidence": confidence,
+            }
 
 
 # Global client instance
