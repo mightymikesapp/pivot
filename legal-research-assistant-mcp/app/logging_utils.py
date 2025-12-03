@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from contextlib import contextmanager
+from collections.abc import Iterator
 from typing import Any, Mapping
 
 from app.logging_config import JsonFormatter, correlation_id_ctx, request_metadata_ctx
@@ -54,7 +55,7 @@ def log_operation(
     query_params: Mapping[str, Any] | None,
     event: str,
     extra_context: Mapping[str, Any] | None = None,
-):
+) -> Iterator[None]:
     """Log the start/end of an operation with elapsed time."""
 
     correlation_id = correlation_id_ctx.get()

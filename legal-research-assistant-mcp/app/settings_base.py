@@ -12,12 +12,12 @@ from pydantic import AliasChoices, BaseModel, ConfigDict
 SettingsConfigDict = dict[str, Any]
 
 
-class BaseSettings(BaseModel):
+class BaseSettings(BaseModel):  # type: ignore[misc]
     """Simplified settings base class with environment loading support."""
 
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
-    def __init__(self, **data: Any):  # type: ignore[override]
+    def __init__(self, **data: Any):
         merged_data = self._load_environment()
         merged_data.update(data)
         super().__init__(**merged_data)

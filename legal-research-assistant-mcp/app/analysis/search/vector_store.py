@@ -7,7 +7,7 @@ It handles model initialization, document storage, and similarity search.
 import logging
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import chromadb
 from chromadb.config import Settings
@@ -101,7 +101,7 @@ class LegalVectorStore:
                 n_results=limit,
                 where=filter_metadata,
             )
-            return results
+            return cast(dict[str, Any], results)
         except Exception as e:
             logger.error(f"Search failed: {e}")
             # Return empty structure on failure to avoid crashing caller
@@ -129,7 +129,7 @@ class LegalVectorStore:
 
     def count(self) -> int:
         """Get total number of documents in store."""
-        return self.collection.count()
+        return cast(int, self.collection.count())
 
     def get_stats(self) -> dict[str, Any]:
         """Get statistics about the vector store."""

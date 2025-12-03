@@ -5,23 +5,18 @@ from typing import Any, cast
 
 from fastmcp import FastMCP
 
-from ..logging_config import tool_logging
 from ..analysis.citation_network import CitationNetworkBuilder
 from ..analysis.mermaid_generator import MermaidGenerator
 from ..analysis.treatment_classifier import TreatmentClassifier
 from ..config import get_settings
+from ..logging_config import tool_logging
 from ..logging_utils import log_event, log_operation
 from ..mcp_client import get_client
-from ..types import (
-    CitationNetworkEdge,
-    CitationNetworkNode,
-    CitationNetworkResult,
-    CourtListenerCase,
-)
+from ..mcp_types import ToolPayload
 
 logger = logging.getLogger(__name__)
 
-network_server = FastMCP[Any]("Citation Network")
+network_server: FastMCP[ToolPayload] = FastMCP("Citation Network")
 
 
 async def build_citation_network_impl(
@@ -895,8 +890,15 @@ async def visualize_citation_network(
         citation,
         diagram_type,
         direction,
-        color_by_treatment,
-        max_nodes,
+        color_by_treatment=color_by_treatment,
+        color_by_court=True,
+        node_size_by=None,
+        show_legend=True,
+        court_palette=None,
+        treatment_palette=None,
+        include_graphml=False,
+        include_json=False,
+        max_nodes=max_nodes,
         request_id=request_id,
     )
 

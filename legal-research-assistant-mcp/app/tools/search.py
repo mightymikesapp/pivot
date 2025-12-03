@@ -16,12 +16,13 @@ from fastmcp import FastMCP
 
 from app.logging_config import tool_logging
 from app.mcp_client import get_client
+from app.mcp_types import ToolPayload
 
 if TYPE_CHECKING:  # pragma: no cover - for type checkers only
     from app.analysis.search.vector_store import LegalVectorStore
 
 # Initialize tool
-search_server = FastMCP("Legal Research Search")
+search_server: FastMCP[ToolPayload] = FastMCP("Legal Research Search")
 
 vector_store: "LegalVectorStore | None" = None
 

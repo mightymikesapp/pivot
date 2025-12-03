@@ -11,7 +11,7 @@ from contextvars import ContextVar, Token
 from datetime import UTC, datetime
 from functools import wraps
 from inspect import Signature, signature
-from typing import Any, Callable, ParamSpec, TypeVar
+from typing import Any, Awaitable, Callable, ParamSpec, TypeVar, cast, overload
 
 correlation_id_ctx: ContextVar[str | None] = ContextVar("correlation_id", default=None)
 request_metadata_ctx: ContextVar[dict[str, Any]] = ContextVar("request_metadata", default={})
@@ -91,22 +91,23 @@ def _bind_context(tool_name: str, call_signature: Signature, args: tuple[Any, ..
     return correlation_token, metadata_token
 
 
-def tool_logging(tool_name: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
+def tool_logging(tool_name: str) -> Callable[[Callable[P, object]], Callable[P, object | Awaitable[object]]]:
     """Decorator to add correlation IDs and structured entry/exit logging for MCP tools."""
 
-    def decorator(func: Callable[P, R]) -> Callable[P, R]:
+    def decorator(func: Callable[P, object]) -> Callable[P, object | Awaitable[object]]:
         call_signature = signature(func)
         logger = logging.getLogger(func.__module__)
 
         if asyncio.iscoroutinefunction(func):
+            async_func = cast(Callable[P, Awaitable[object]], func)
 
             @wraps(func)
-            async def async_wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            async def async_wrapper(*args: P.args, **kwargs: P.kwargs) -> object:
                 correlation_token, metadata_token = _bind_context(tool_name, call_signature, args, kwargs)
                 start = time.perf_counter()
                 logger.info("Tool call started", extra={"event": "tool_start"})
                 try:
-                    result = await func(*args, **kwargs)
+                    result = await async_func(*args, **kwargs)
                     elapsed_ms = round((time.perf_counter() - start) * 1000, 2)
                     logger.info("Tool call completed", extra={"event": "tool_end", "elapsed_ms": elapsed_ms})
                     return result
@@ -123,13 +124,15 @@ def tool_logging(tool_name: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
 
             return async_wrapper
 
+        sync_func = func
+
         @wraps(func)
-        def sync_wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        def sync_wrapper(*args: P.args, **kwargs: P.kwargs) -> object:
             correlation_token, metadata_token = _bind_context(tool_name, call_signature, args, kwargs)
             start = time.perf_counter()
             logger.info("Tool call started", extra={"event": "tool_start"})
             try:
-                result = func(*args, **kwargs)
+                result = sync_func(*args, **kwargs)
                 elapsed_ms = round((time.perf_counter() - start) * 1000, 2)
                 logger.info("Tool call completed", extra={"event": "tool_end", "elapsed_ms": elapsed_ms})
                 return result

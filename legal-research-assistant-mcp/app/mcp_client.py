@@ -6,8 +6,11 @@ API directly since MCP-to-MCP communication patterns are still evolving.
 """
 
 import asyncio
-from datetime import datetime, timedelta
+import json
 import logging
+import time
+from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any, Iterable, cast
 
 import httpx
@@ -21,7 +24,7 @@ from app.types import CourtListenerCase, CourtListenerOpinion
 logger = logging.getLogger(__name__)
 
 
-class CircuitBreakerOpenError(httpx.RequestError):
+class CircuitBreakerOpenError(httpx.RequestError):  # type: ignore[misc]
     """Raised when the circuit breaker is open."""
 
     def __init__(self, request: httpx.Request | None = None):
@@ -57,6 +60,8 @@ class CourtListenerClient:
         self.failure_count = 0
         self.circuit_open_until: datetime | None = None
         self.cache_manager = get_cache_manager()
+        self.cache_dir = self.settings.courtlistener_cache_dir
+        self.cache_ttl = self.settings.courtlistener_ttl_search
 
         timeout = httpx.Timeout(
             timeout=self.settings.courtlistener_timeout,
@@ -205,7 +210,7 @@ class CourtListenerClient:
             if self.settings.courtlistener_search_cache_enabled:
                 cached_result = self.cache_manager.get(CacheType.SEARCH, params)
                 if cached_result is not None:
-                    return cached_result
+                    return cast(dict[str, Any], cached_result)
 
             try:
                 response = await self._request(
@@ -214,7 +219,7 @@ class CourtListenerClient:
                     params=params,
                     headers=self._get_headers(),
                 )
-                result = response.json()
+                result = cast(dict[str, Any], response.json())
 
                 if self.settings.courtlistener_search_cache_enabled:
                     self.cache_manager.set(CacheType.SEARCH, params, result)
@@ -256,7 +261,7 @@ class CourtListenerClient:
         # Check cache
         cached_opinion = self.cache_manager.get(CacheType.METADATA, cache_key)
         if cached_opinion:
-            return cached_opinion
+            return cast(dict[str, Any], cached_opinion)
 
         with log_operation(
             logger,
@@ -271,7 +276,7 @@ class CourtListenerClient:
                     f"opinions/{opinion_id}/",
                     headers=self._get_headers(),
                 )
-                data = response.json()
+                data = cast(dict[str, Any], response.json())
 
                 # Write cache
                 self.cache_manager.set(CacheType.METADATA, cache_key, data)
@@ -313,7 +318,7 @@ class CourtListenerClient:
         # Check cache
         cached_text = self.cache_manager.get(CacheType.TEXT, cache_key)
         if cached_text:
-            return cached_text
+            return cast(str, cached_text)
 
         with log_operation(
             logger,
@@ -336,7 +341,7 @@ class CourtListenerClient:
 
                 for field in text_fields:
                     if opinion.get(field):
-                        text = opinion[field]
+                        text = str(opinion[field])
                         log_event(
                             logger,
                             f"Retrieved {len(text)} chars of text from field '{field}'",
@@ -398,7 +403,7 @@ class CourtListenerClient:
         cache_key = {"citation_lookup": citation}
         cached_result = self.cache_manager.get(CacheType.SEARCH, cache_key)
         if cached_result:
-            return cast(CourtListenerCase, cached_result)
+            return cast(dict[str, Any], cached_result)
 
         with log_operation(
             logger,
@@ -414,7 +419,7 @@ class CourtListenerClient:
                     params=params,
                     headers=self._get_headers(),
                 )
-                data = response.json()
+                data = cast(dict[str, Any], response.json())
 
                 if not data.get("results"):
                     return cast(CourtListenerCase, {"error": "Citation not found", "citation": citation})
@@ -442,7 +447,7 @@ class CourtListenerClient:
                             break
 
                 if not result_to_return:
-                     # Fallback: if no exact match found, return oldest result
+                    # Fallback: if no exact match found, return oldest result
                     log_event(
                         logger,
                         "No exact citation match, returning oldest result",
@@ -456,7 +461,7 @@ class CourtListenerClient:
 
                 if self.settings.courtlistener_search_cache_enabled:
                     self.cache_manager.set(CacheType.SEARCH, cache_key, result_to_return)
-                return result_to_return
+                return cast(dict[str, Any], result_to_return)
 
             except httpx.HTTPError as e:
                 log_event(
@@ -488,14 +493,13 @@ class CourtListenerClient:
         cache_key = {"citing_cases": citation, "limit": limit}
         cached_results = self.cache_manager.get(CacheType.SEARCH, cache_key)
         if cached_results is not None:
-            return CitingCasesResult(cached_results)
+            return cast(dict[str, Any], cached_results)
 
         query_attempts = [
             f'"{citation}"',  # Simple quoted search - finds cases mentioning citation
             citation,  # Unquoted
         ]
 
-        failed_requests: list[dict[str, object]] = []
         with log_operation(
             logger,
             tool_name="find_citing_cases",
