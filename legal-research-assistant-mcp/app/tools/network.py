@@ -5,6 +5,7 @@ from typing import Any
 
 from fastmcp import FastMCP
 
+from ..logging_config import tool_logging
 from ..analysis.citation_network import CitationNetworkBuilder
 from ..analysis.mermaid_generator import MermaidGenerator
 from ..analysis.treatment_classifier import TreatmentClassifier
@@ -732,6 +733,7 @@ async def generate_citation_report_impl(
 
 
 @network_server.tool()
+@tool_logging("build_citation_network")
 async def build_citation_network(
     citation: str,
     max_depth: int = 2,
@@ -764,6 +766,7 @@ async def build_citation_network(
 
 
 @network_server.tool()
+@tool_logging("filter_citation_network")
 async def filter_citation_network(
     citation: str,
     treatments: list[str] | None = None,
@@ -801,6 +804,7 @@ async def filter_citation_network(
 
 
 @network_server.tool()
+@tool_logging("get_network_statistics")
 async def get_network_statistics(
     citation: str,
     max_nodes: int = 100,
@@ -842,6 +846,7 @@ async def get_network_statistics(
 
 
 @network_server.tool()
+@tool_logging("visualize_citation_network")
 async def visualize_citation_network(
     citation: str,
     diagram_type: str = "flowchart",
@@ -880,6 +885,7 @@ async def visualize_citation_network(
 
 
 @network_server.tool()
+@tool_logging("generate_citation_report")
 async def generate_citation_report(
     citation: str,
     include_diagram: bool = True,

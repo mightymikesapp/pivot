@@ -2,41 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 from contextlib import contextmanager
-from datetime import UTC, datetime
 from typing import Any, Mapping
 
-
-class JsonFormatter(logging.Formatter):
-    """Format log records as JSON with common context fields."""
-
-    def format(self, record: logging.LogRecord) -> str:  # pragma: no cover - formatting logic
-        log_record: dict[str, Any] = {
-            "timestamp": datetime.now(UTC).isoformat(),
-            "level": record.levelname,
-            "logger": record.name,
-            "message": record.getMessage(),
-        }
-
-        for field in (
-            "tool_name",
-            "request_id",
-            "query_params",
-            "citation_count",
-            "elapsed_ms",
-            "event",
-        ):
-            value = getattr(record, field, None)
-            if value is not None:
-                log_record[field] = value
-
-        if record.exc_info:
-            log_record["exception"] = self.formatException(record.exc_info)
-
-        return json.dumps(log_record, ensure_ascii=False)
+from app.logging_config import JsonFormatter, correlation_id_ctx, request_metadata_ctx
 
 
 def log_event(
@@ -53,13 +24,20 @@ def log_event(
 ) -> None:
     """Log a single structured event."""
 
+    correlation_id = correlation_id_ctx.get()
+    metadata = request_metadata_ctx.get()
     context: dict[str, Any] = {
-        "tool_name": tool_name,
-        "request_id": request_id,
+        "tool_name": tool_name or metadata.get("tool_name"),
+        "request_id": request_id or correlation_id,
         "query_params": dict(query_params) if query_params else None,
         "citation_count": citation_count,
         "event": event,
     }
+
+    if correlation_id:
+        context["correlation_id"] = correlation_id
+    if metadata.get("citation"):
+        context["citation"] = metadata.get("citation")
 
     if extra_context:
         context.update(extra_context)
@@ -79,12 +57,19 @@ def log_operation(
 ):
     """Log the start/end of an operation with elapsed time."""
 
+    correlation_id = correlation_id_ctx.get()
+    metadata = request_metadata_ctx.get()
     context: dict[str, Any] = {
-        "tool_name": tool_name,
-        "request_id": request_id,
+        "tool_name": tool_name or metadata.get("tool_name"),
+        "request_id": request_id or correlation_id,
         "query_params": dict(query_params) if query_params else None,
         "event": event,
     }
+
+    if correlation_id:
+        context["correlation_id"] = correlation_id
+    if metadata.get("citation"):
+        context["citation"] = metadata.get("citation")
 
     if extra_context:
         context.update(extra_context)

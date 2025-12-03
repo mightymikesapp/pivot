@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastmcp import FastMCP
 
+from app.logging_config import tool_logging
 from app.mcp_client import get_client
 
 if TYPE_CHECKING:  # pragma: no cover - for type checkers only
@@ -41,6 +42,7 @@ logger = logging.getLogger(__name__)
 
 
 @search_server.tool()
+@tool_logging("semantic_search")
 async def semantic_search(query: str, limit: int = 10) -> dict[str, Any]:
     """Perform a semantic search for legal cases.
 
@@ -168,6 +170,7 @@ async def semantic_search(query: str, limit: int = 10) -> dict[str, Any]:
 
 
 @search_server.tool()
+@tool_logging("purge_memory")
 def purge_memory() -> str:
     """Clear the local semantic search library (memory).
 
@@ -180,6 +183,7 @@ def purge_memory() -> str:
 
 
 @search_server.tool()
+@tool_logging("get_library_stats")
 def get_library_stats() -> dict[str, Any]:
     """Get statistics about the local semantic search library."""
     vector_store = get_vector_store()
