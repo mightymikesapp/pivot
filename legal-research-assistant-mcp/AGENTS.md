@@ -27,6 +27,16 @@
 - Integration tests require COURTLISTENER_API_KEY
 - Target 80%+ coverage
 
+## Testing Conventions
+- Use pytest with async support (pytest-asyncio)
+- Mock all external API calls in unit tests
+- Fixtures go in tests/conftest.py or tests/fixtures/
+- Test file naming: test_{module_name}.py
+- Use @pytest.mark.asyncio for async tests
+- Target 80%+ coverage on app/ modules
+- Integration tests require --run-integration flag
+- Canonical test case: Roe v. Wade (410 U.S. 113)
+
 ## External APIs
 - CourtListener API: Rate limited, cache responses
 - Always use retry/backoff for external calls
