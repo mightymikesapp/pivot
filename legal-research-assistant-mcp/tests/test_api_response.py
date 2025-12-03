@@ -11,10 +11,12 @@ async def test_api_response_structure(mock_client):
     # Search for cases mentioning Roe v. Wade
     results = await mock_client.find_citing_cases("410 U.S. 113", limit=2)
 
-    assert isinstance(results, list)
-    assert len(results) > 0
+    assert isinstance(results, dict)
+    assert "results" in results
+    assert isinstance(results["results"], list)
+    assert len(results["results"]) > 0
 
-    first_result = results[0]
+    first_result = results["results"][0]
     assert "caseName" in first_result
     assert "citation" in first_result
     assert "dateFiled" in first_result

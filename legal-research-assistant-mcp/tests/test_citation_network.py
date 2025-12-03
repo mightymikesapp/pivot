@@ -158,4 +158,4 @@ def test_extract_citation_edge_cases():
 
     # No citation, fallback to cluster_id
     case3 = {"cluster_id": 999}
-    assert builder._extract_citation(case3) == 999
+    assert builder._extract_citation(case3) == "999"

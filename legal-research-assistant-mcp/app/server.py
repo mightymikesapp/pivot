@@ -154,14 +154,13 @@ async def setup() -> None:
     log_event(logger, "Server setup complete", tool_name="server", event="server_setup")
 
 
-# Run setup when module is imported
-asyncio.run(setup())
-
-
 async def main() -> None:
     """Run the Legal Research Assistant MCP server."""
     logger.info("Starting Legal Research Assistant MCP server")
     logger.info(f"Configuration: {settings.model_dump()}")
+
+    # Perform server setup
+    await setup()
 
     try:
         # Run with stdio transport (default for MCP servers)

@@ -9,7 +9,7 @@ import asyncio
 import json
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable, cast
 
@@ -91,12 +91,12 @@ class CourtListenerClient:
         return headers
 
     def _circuit_open(self) -> bool:
-        return self.circuit_open_until is not None and datetime.utcnow() < self.circuit_open_until
+        return self.circuit_open_until is not None and datetime.now(UTC) < self.circuit_open_until
 
     def _record_failure(self) -> None:
         self.failure_count += 1
         if self.failure_count >= 5:
-            self.circuit_open_until = datetime.utcnow() + timedelta(seconds=60)
+            self.circuit_open_until = datetime.now(UTC) + timedelta(seconds=60)
 
     def _record_success(self) -> None:
         self.failure_count = 0
@@ -558,16 +558,20 @@ class CourtListenerClient:
                     status_code = (
                         e.response.status_code if isinstance(e, httpx.HTTPStatusError) else None
                     )
+                    
+                    # Safe error message construction
+                    error_msg = str(e)
+                    
                     failed_requests.append(
                         {
                             "url": f"{self.base_url}search/",
                             "params": params,
                             "status": status_code,
-                            "message": str(e),
+                            "message": error_msg,
                         }
                     )
                     confidence = max(confidence - 0.2, 0.3)
-                    warning_msg = f"Query '{query}' failed with error: {e}; continuing with fallback searches."
+                    warning_msg = f"Query '{query}' failed with error: {error_msg}; continuing with fallback searches."
                     warnings.append(warning_msg)
                     log_event(
                         logger,
@@ -582,8 +586,8 @@ class CourtListenerClient:
                         {
                             "query": query,
                             "params": params,
-                            "error": str(e),
-                            "status": getattr(e.response, "status_code", None),
+                            "error": error_msg,
+                            "status": getattr(e, "response", None) and getattr(e.response, "status_code", None),
                         }
                     )
                     continue

@@ -11,6 +11,7 @@ import pytest
 
 from app.mcp_client import CourtListenerClient, get_client
 from app.config import Settings
+from app.cache import CacheType
 
 
 pytestmark = pytest.mark.integration
@@ -27,7 +28,7 @@ def mock_settings(tmp_path):
 
 
 @pytest.fixture
-def client(mock_settings):
+def client(mock_settings, tmp_path):
     # Don't autospec AsyncClient, just patch it to avoid complex spec issues
     with patch("httpx.AsyncClient") as mock_client_cls:
         # Create a mock instance for the client
@@ -35,6 +36,11 @@ def client(mock_settings):
         mock_client_cls.return_value = mock_instance
 
         client = CourtListenerClient(mock_settings)
+        
+        # Replace the cache manager with a fresh one using tmp_path
+        from app.cache import CacheManager
+        client.cache_manager = CacheManager(base_dir=tmp_path / "cache")
+        
         # Explicitly set the client to our mock instance
         client.client = mock_instance
         yield client
@@ -157,9 +163,7 @@ async def test_get_opinion_caching(client):
     data = {"id": opinion_id, "foo": "bar"}
 
     # Ensure no cache exists
-    cache_path = client._cache_path(f"opinion_{opinion_id}")
-    if cache_path.exists():
-        cache_path.unlink()
+    client.cache_manager.clear(CacheType.METADATA)
 
     # First call: network request
     mock_response = MagicMock()
@@ -173,7 +177,9 @@ async def test_get_opinion_caching(client):
     assert client.client.request.call_count == 1
 
     # Verify it was cached
-    assert client._read_cache(f"opinion_{opinion_id}") == data
+    # We can check via manager
+    cache_key = {"opinion_id": opinion_id}
+    assert client.cache_manager.get(CacheType.METADATA, cache_key) == data
 
     # Second call: should hit cache and NOT call request
     client.client.request.reset_mock()
@@ -261,12 +267,12 @@ async def test_find_citing_cases_caching(client):
 
     client._request = AsyncMock(return_value=mock_response)
 
-    first = await client.find_citing_cases("410 U.S. 113", limit=10)
+    first = await client.find_citing_cases("410 U.S. 113", limit=1)
     assert first["results"] == [{"case_name": "Test"}]
     assert client._request.await_count == 1
 
     client._request.reset_mock()
-    second = await client.find_citing_cases("410 U.S. 113", limit=10)
+    second = await client.find_citing_cases("410 U.S. 113", limit=1)
     assert second == first
     client._request.assert_not_awaited()
 

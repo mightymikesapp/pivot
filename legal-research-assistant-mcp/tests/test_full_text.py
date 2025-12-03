@@ -11,8 +11,8 @@ async def test_full_text_fetching(mock_client):
 
     # First, find a case citing Roe
     results = await mock_client.find_citing_cases("410 U.S. 113", limit=1)
-    assert len(results) > 0
-    case = results[0]
+    assert len(results["results"]) > 0
+    case = results["results"][0]
 
     # Get opinion IDs
     opinions = case.get("opinions", [])
