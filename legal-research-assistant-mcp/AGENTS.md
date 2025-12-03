@@ -1,20 +1,37 @@
 # AGENTS.md
 
-## Setup Commands
+## Setup
 - Install: `uv sync`
-- Run server: `uv run python -m app.server`
-- Test (unit): `uv run pytest tests/unit/`
-- Test (all): `uv run pytest --run-integration`
+- Test: `uv run pytest`
 - Lint: `uv run ruff check .`
-- Format: `uv run ruff format .`
 - Type check: `uv run mypy app/`
 
+## Commands to Run
+- After modifying Python files: `uv run pytest tests/unit/`
+- Before completing: `uv run ruff check . && uv run mypy app/`
+
 ## Code Style
-- Python 3.12+
-- Use type hints everywhere
-- Pydantic for configuration and validation
+- Python 3.12+, strict type hints
 - Async/await for all external calls
-- Structured logging (no print statements)
+- Pydantic for config/validation
+- No print() - use structured logging
+
+## Project Structure
+- app/server.py - MCP entry point
+- app/tools/ - User-facing MCP tools
+- app/analysis/ - Internal logic modules
+- app/mcp_client.py - CourtListener API wrapper
+- tests/unit/ - Fast tests (mock external)
+- tests/integration/ - Slow tests (real APIs)
+
+## Conventions
+- Test files mirror source: app/tools/foo.py → tests/unit/tools/test_foo.py
+- External API calls: always use retry/backoff
+- Cache CourtListener responses (see app/cache.py)
+
+## PR Messages
+- Format: `[scope] description`
+- Include: what changed, why, how to test
 
 ## Architecture
 - app/server.py - MCP server entry point
