@@ -18,6 +18,7 @@ from typing import Any
 from fastmcp import FastMCP
 
 from app.config import settings
+from app.logging_config import tool_logging
 from app.logging_utils import log_event
 from app.tools.cache_tools import cache_server
 from app.tools.network import network_server
@@ -42,6 +43,7 @@ mcp: FastMCP[Any] = FastMCP(
 
 
 @mcp.tool()
+@tool_logging("health_check")
 def health_check() -> dict[str, Any]:
     """Check the health status of the Legal Research Assistant MCP server.
 
@@ -71,6 +73,7 @@ def health_check() -> dict[str, Any]:
 
 
 @mcp.tool()
+@tool_logging("status")
 def status() -> dict[str, str]:
     """Get server status.
 

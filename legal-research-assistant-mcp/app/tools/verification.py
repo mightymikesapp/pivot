@@ -12,6 +12,7 @@ from typing import Any
 from fastmcp import FastMCP
 
 from app.analysis.quote_matcher import QuoteMatcher
+from app.logging_config import tool_logging
 from app.logging_utils import log_event, log_operation
 from app.mcp_client import get_client
 
@@ -408,6 +409,7 @@ verification_server = FastMCP(
 
 
 @verification_server.tool()
+@tool_logging("verify_quote")
 async def verify_quote(
     quote: str,
     citation: str,
@@ -455,6 +457,7 @@ async def verify_quote(
 
 
 @verification_server.tool()
+@tool_logging("batch_verify_quotes")
 async def batch_verify_quotes(
     quotes: list[dict[str, str]],
     request_id: str | None = None,

@@ -1,12 +1,11 @@
 """Configuration management for Legal Research Assistant MCP."""
 
-import logging
 from pathlib import Path
 
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from app.logging_utils import JsonFormatter
+from app.logging_config import configure_logging
 
 
 class Settings(BaseSettings):
@@ -78,8 +77,8 @@ class Settings(BaseSettings):
     # Server configuration
     log_level: str = Field(default="INFO", description="Logging level")
     log_format: str = Field(
-        default="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        description="Logging format string",
+        default="json",
+        description="Logging format string or 'json' for structured logging",
     )
     log_date_format: str = Field(
         default="%Y-%m-%d %H:%M:%S",
@@ -118,19 +117,7 @@ class Settings(BaseSettings):
 
     def configure_logging(self) -> None:
         """Configure application logging."""
-        root_logger = logging.getLogger()
-        root_logger.setLevel(getattr(logging, self.log_level.upper()))
-
-        # Replace existing handlers with structured JSON output
-        handler = logging.StreamHandler()
-        handler.setFormatter(JsonFormatter())
-
-        root_logger.handlers = [handler]
-        logging.basicConfig(
-            level=getattr(logging, self.log_level.upper()),
-            format=self.log_format,
-            datefmt=self.log_date_format,
-        )
+        configure_logging(self.log_level, self.log_format, self.log_date_format)
 
 
 # Global settings instance

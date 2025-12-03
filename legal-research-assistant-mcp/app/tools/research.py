@@ -8,6 +8,7 @@ from typing import Any
 from fastmcp import FastMCP
 
 from app.analysis.mermaid_generator import MermaidGenerator
+from app.logging_config import tool_logging
 from app.config import get_settings
 from app.logging_utils import log_event, log_operation
 from app.mcp_client import get_client
@@ -90,6 +91,7 @@ async def _analyze_citation(
 
 
 @research_server.tool()
+@tool_logging("run_research_pipeline")
 async def run_research_pipeline(
     citations: list[str],
     key_questions: list[str] | None = None,
@@ -191,6 +193,7 @@ async def run_research_pipeline(
 
 
 @research_server.tool()
+@tool_logging("issue_map")
 async def issue_map(
     citations: list[str],
     key_questions: list[str] | None = None,

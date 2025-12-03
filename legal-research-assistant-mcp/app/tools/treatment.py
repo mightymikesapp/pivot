@@ -11,6 +11,7 @@ from fastmcp import FastMCP
 
 from app.analysis.treatment_classifier import TreatmentClassifier
 from app.config import settings
+from app.logging_config import tool_logging
 from app.logging_utils import log_event, log_operation
 from app.mcp_client import get_client
 
@@ -309,6 +310,7 @@ treatment_server = FastMCP(
 
 
 @treatment_server.tool()
+@tool_logging("check_case_validity")
 async def check_case_validity(
     citation: str, request_id: str | None = None
 ) -> dict[str, Any]:
@@ -348,6 +350,7 @@ async def check_case_validity(
 
 
 @treatment_server.tool()
+@tool_logging("get_citing_cases")
 async def get_citing_cases(
     citation: str,
     treatment_filter: str | None = None,

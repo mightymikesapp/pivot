@@ -3,18 +3,22 @@
 This module provides tools for monitoring and managing the application's cache.
 """
 
+import logging
 from typing import Any
 
 from fastmcp import FastMCP
 
 from app.cache import CacheType, get_cache_manager
+from app.logging_config import tool_logging
 from app.logging_utils import log_event
 
 # Create a sub-server for cache tools
 cache_server = FastMCP("Cache Tools")
+logger = logging.getLogger(__name__)
 
 
 @cache_server.tool()
+@tool_logging("cache_stats")
 def cache_stats() -> dict[str, Any]:
     """Get current cache statistics.
 
@@ -25,15 +29,16 @@ def cache_stats() -> dict[str, Any]:
     stats = manager.get_stats()
 
     log_event(
-        logger=None,  # fastmcp handles logging if needed, or we can import logger
+        logger,
         event="cache_stats_requested",
         message="Cache statistics retrieved",
-        stats=stats
+        extra_context={"stats": stats},
     )
     return stats
 
 
 @cache_server.tool()
+@tool_logging("cache_clear")
 def cache_clear(type: str | None = None) -> dict[str, Any]:
     """Clear the cache.
 
@@ -59,11 +64,10 @@ def cache_clear(type: str | None = None) -> dict[str, Any]:
 
     message = f"Cleared {count} files from {'all' if not type else type} cache"
     log_event(
-        logger=None,
+        logger,
         event="cache_cleared",
         message=message,
-        count=count,
-        target=type
+        extra_context={"count": count, "target": type},
     )
 
     return {
