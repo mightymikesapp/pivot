@@ -343,6 +343,10 @@ async def get_network_statistics_impl(
 
     top_ranked_nodes: dict[str, list[tuple[str, float]]] = {}
 
+    pagerank_scores: dict[str, float] = {}
+    eigenvector_scores: dict[str, float] = {}
+    community_assignments: dict[str, int] | None = None
+
     if enable_advanced_metrics:
         import networkx as nx
 
@@ -417,10 +421,6 @@ async def get_network_statistics_impl(
                 treatment=edge.get("treatment"),
                 confidence=edge.get("confidence"),
             )
-
-        pagerank_scores = {}
-        eigenvector_scores = {}
-        community_assignments: dict[str, int] | None = None
 
         if graph.number_of_nodes() > 0:
             pagerank_scores = nx.pagerank(graph, weight="weight")
