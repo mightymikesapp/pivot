@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.logging_utils import log_event
+from app.types import CitationNetworkEdge, CitationNetworkNode, CourtListenerCase
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,7 @@ class CaseNode:
     court: str | None
     cluster_id: int | None
     opinion_ids: list[int]
-    metadata: dict[str, Any]
+    metadata: dict[str, object]
 
 
 @dataclass
@@ -66,9 +67,9 @@ class CitationNetworkBuilder:
 
     def build_network(
         self,
-        root_case: dict[str, Any],
-        citing_cases: list[dict[str, Any]],
-        treatments: list[dict[str, Any]] | None = None,
+        root_case: CourtListenerCase,
+        citing_cases: list[CourtListenerCase],
+        treatments: list[dict[str, object]] | None = None,
     ) -> CitationNetwork:
         """Build a citation network from a root case and its citing cases.
 
@@ -157,7 +158,7 @@ class CitationNetworkBuilder:
             cited_counts=dict(cited_counts),
         )
 
-    def _extract_citation(self, case: dict[str, Any]) -> str:
+    def _extract_citation(self, case: CourtListenerCase | dict[str, Any]) -> str:
         """Extract the primary citation from a case.
 
         Args:
@@ -173,7 +174,7 @@ class CitationNetworkBuilder:
             return citations
         return case.get("cluster_id", "unknown")
 
-    def _create_node(self, case: dict[str, Any]) -> CaseNode:
+    def _create_node(self, case: CourtListenerCase | dict[str, Any]) -> CaseNode:
         """Create a case node from CourtListener case data.
 
         Args:

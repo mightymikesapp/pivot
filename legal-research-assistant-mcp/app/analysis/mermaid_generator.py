@@ -10,7 +10,8 @@ import logging
 from collections import defaultdict
 from html import escape
 from itertools import cycle
-from typing import Any
+
+from app.types import CitationNetworkResult
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ class MermaidGenerator:
         return palette
 
     def _calculate_node_scores(
-        self, network: dict[str, Any]
+        self, network: CitationNetworkResult
     ) -> tuple[dict[str, int], dict[str, int]]:
         """Calculate citation and authority scores for nodes."""
 
@@ -171,7 +172,7 @@ class MermaidGenerator:
 
     def generate_flowchart(
         self,
-        network: dict[str, Any],
+        network: CitationNetworkResult,
         direction: str = "TB",
         include_dates: bool = True,
         color_by_treatment: bool = True,
@@ -345,7 +346,7 @@ class MermaidGenerator:
 
     def generate_graph(
         self,
-        network: dict[str, Any],
+        network: CitationNetworkResult,
         direction: str = "LR",
         show_treatments: bool = True,
         color_by_court: bool = True,
@@ -466,7 +467,7 @@ class MermaidGenerator:
 
     def generate_timeline(
         self,
-        network: dict[str, Any],
+        network: CitationNetworkResult,
         treatment_filter: list[str] | None = None,
     ) -> str:
         """Generate a Mermaid timeline showing citations over time.
@@ -525,7 +526,7 @@ class MermaidGenerator:
 
         return "\n".join(lines)
 
-    def generate_graphml(self, network: dict[str, Any]) -> str:
+    def generate_graphml(self, network: CitationNetworkResult) -> str:
         """Export the citation network as GraphML."""
 
         lines = [
@@ -562,7 +563,7 @@ class MermaidGenerator:
 
         return "\n".join(lines)
 
-    def generate_json_graph(self, network: dict[str, Any]) -> dict[str, Any]:
+    def generate_json_graph(self, network: CitationNetworkResult) -> dict[str, Any]:
         """Export the citation network as a JSON graph structure."""
 
         citation_scores, authority_scores = self._calculate_node_scores(network)
@@ -596,7 +597,7 @@ class MermaidGenerator:
 
         return {"nodes": nodes, "edges": edges, "root": network.get("root_citation")}
 
-    def generate_summary_stats(self, network: dict[str, Any]) -> str:
+    def generate_summary_stats(self, network: CitationNetworkResult) -> str:
         """Generate a text summary of network statistics.
 
         Args:
