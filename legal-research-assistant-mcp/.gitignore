@@ -5,6 +5,14 @@ __pycache__/
 # Test artifacts
 .pytest_cache/
 
+# Application caches and runtime data
+.cache/
+citation_networks/
+
+# Environment configuration
+.env
+.env.*
+
 # Coverage reports
 .coverage
 .coverage.*

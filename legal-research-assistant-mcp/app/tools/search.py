@@ -9,16 +9,20 @@ This module implements the "Smart Scout" strategy:
 
 import logging
 from typing import Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from fastmcp import FastMCP
 
-from app.analysis.search.vector_store import LegalVectorStore
 from app.mcp_client import get_client
+
+if TYPE_CHECKING:  # pragma: no cover - for type checkers only
+    from app.analysis.search.vector_store import LegalVectorStore
 
 # Initialize tool
 search_server = FastMCP("Legal Research Search")
 
 _vector_store: Optional[LegalVectorStore] = None
+_vector_store: "LegalVectorStore | None" = None
 
 
 def get_vector_store() -> LegalVectorStore:
@@ -27,6 +31,8 @@ def get_vector_store() -> LegalVectorStore:
 
     if _vector_store is None:
         # Use a data directory in the project root
+        from app.analysis.search.vector_store import LegalVectorStore
+
         _vector_store = LegalVectorStore(persistence_path="./data/chroma_db")
 
     return _vector_store
