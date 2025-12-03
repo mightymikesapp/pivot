@@ -1,0 +1,273 @@
+"""Research orchestration tools combining multiple MCP capabilities."""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+from fastmcp import FastMCP
+
+from app.analysis.mermaid_generator import MermaidGenerator
+from app.config import get_settings
+from app.logging_utils import log_event, log_operation
+from app.mcp_client import get_client
+from app.tools.network import build_citation_network_impl
+from app.tools.treatment import check_case_validity_impl
+from app.tools.verification import batch_verify_quotes_impl
+
+logger = logging.getLogger(__name__)
+
+research_server = FastMCP[Any](
+    name="Research Workflow Tools",
+    instructions=(
+        "Coordinated research tools that assemble citation lookups, treatment analysis, "
+        "quote verification, citation-network building, and mermaid rendering for visual summaries."
+    ),
+)
+
+
+def _format_key_questions(key_questions: list[str]) -> list[str]:
+    """Normalize the key questions list."""
+    return [q for q in key_questions if q.strip()]
+
+
+async def _analyze_citation(
+    citation: str,
+    scope: str | None,
+    mermaid_generator: MermaidGenerator,
+    request_id: str | None,
+) -> dict[str, Any]:
+    """Gather treatment, network, and visualization details for a citation."""
+    query_params = {"citation": citation, "scope": scope}
+    settings = get_settings()
+    client = get_client()
+
+    with log_operation(
+        logger,
+        tool_name="research_pipeline_case",
+        request_id=request_id,
+        query_params=query_params,
+        event="research_pipeline_case",
+    ):
+        lookup = await client.lookup_citation(citation, request_id=request_id)
+
+        if "error" in lookup:
+            return {"citation": citation, "error": lookup.get("error", "Lookup failed")}
+
+        treatment = await check_case_validity_impl(citation, request_id=request_id)
+        network = await build_citation_network_impl(
+            citation=citation,
+            max_depth=settings.network_max_depth,
+            max_nodes=settings.max_citing_cases,
+            include_treatments=True,
+            request_id=request_id,
+        )
+
+        mermaid = None
+        if "error" not in network and network.get("nodes"):
+            mermaid = mermaid_generator.generate_flowchart(network)
+
+        case_summary = treatment.get("summary") if isinstance(treatment, dict) else None
+        log_event(
+            logger,
+            "Completed research aggregation for citation",
+            tool_name="research_pipeline_case",
+            request_id=request_id,
+            query_params=query_params,
+            extra_context={"case_name": lookup.get("caseName"), "has_mermaid": bool(mermaid)},
+        )
+
+        return {
+            "citation": citation,
+            "case_name": lookup.get("caseName"),
+            "court": lookup.get("court"),
+            "date_filed": lookup.get("dateFiled"),
+            "treatment": treatment,
+            "network": network,
+            "mermaid": mermaid,
+            "summary": case_summary,
+        }
+
+
+@research_server.tool()
+async def run_research_pipeline(
+    citations: list[str],
+    key_questions: list[str] | None = None,
+    scope: str | None = None,
+    quotes: list[dict[str, str]] | None = None,
+    request_id: str | None = None,
+) -> dict[str, Any]:
+    """Execute a coordinated research workflow across citations and questions.
+
+    This tool orchestrates citation lookup, treatment classification, quote verification,
+    citation network building, and mermaid rendering to produce a structured report.
+
+    Args:
+        citations: List of citations to analyze.
+        key_questions: Optional research questions to guide the summary.
+        scope: Optional scope or jurisdiction focus to annotate results.
+        quotes: Optional list of quotes to verify. Each item should include keys
+            "quote" and "citation", and may include "pinpoint".
+
+    Returns:
+        Dictionary containing a markdown summary and machine-readable sections for
+        cases, quotes, and questions.
+    """
+
+    if not citations:
+        return {"error": "At least one citation is required"}
+
+    questions = _format_key_questions(key_questions or [])
+    mermaid_generator = MermaidGenerator()
+
+    case_results = []
+    for citation in citations:
+        case_results.append(
+            await _analyze_citation(citation, scope, mermaid_generator, request_id)
+        )
+
+    quote_results: dict[str, Any] | None = None
+    if quotes:
+        quote_results = await batch_verify_quotes_impl(quotes, request_id=request_id)
+
+    summary_lines: list[str] = ["# Research Pipeline Summary"]
+    if scope:
+        summary_lines.append(f"*Scope:* {scope}")
+
+    summary_lines.append("## Key Questions")
+    if questions:
+        summary_lines.extend([f"- {question}" for question in questions])
+    else:
+        summary_lines.append("- No key questions provided")
+
+    summary_lines.append("\n## Case Findings")
+    for case in case_results:
+        if case.get("error"):
+            summary_lines.append(f"- **{case['citation']}**: {case['error']}")
+            continue
+
+        summary = case.get("summary") or "No treatment summary available"
+        citation_label = f"{case.get('citation')} – {case.get('case_name', 'Unknown case')}"
+        summary_lines.append(f"- **{citation_label}**: {summary}")
+
+        network_stats = case.get("network", {}).get("statistics")
+        if network_stats:
+            summary_lines.append(
+                f"  - Network: {network_stats.get('total_nodes', 0)} nodes, "
+                f"{network_stats.get('total_edges', 0)} edges"
+            )
+        if case.get("mermaid"):
+            summary_lines.append("  - Mermaid diagram available")
+
+    if quote_results:
+        summary_lines.append("\n## Quote Verification")
+        if quote_results.get("results"):
+            for result in quote_results["results"]:
+                label = result.get("citation", "Unknown citation")
+                status = "found" if result.get("found") else "not found"
+                summary_lines.append(
+                    f"- Quote in {label}: {status} (similarity {result.get('similarity', 0)})"
+                )
+        elif quote_results.get("error"):
+            summary_lines.append(f"- Error verifying quotes: {quote_results['error']}")
+
+    summary = "\n".join(summary_lines)
+
+    log_event(
+        logger,
+        "Research pipeline completed",
+        tool_name="run_research_pipeline",
+        request_id=request_id,
+        query_params={"citation_count": len(citations)},
+    )
+
+    return {
+        "summary_markdown": summary,
+        "cases": case_results,
+        "quotes": quote_results,
+        "key_questions": questions,
+        "scope": scope,
+    }
+
+
+@research_server.tool()
+async def issue_map(
+    citations: list[str],
+    key_questions: list[str] | None = None,
+    scope: str | None = None,
+    request_id: str | None = None,
+) -> dict[str, Any]:
+    """Create an issue map linking key questions to cited authorities.
+
+    Args:
+        citations: Citations to analyze for issue coverage.
+        key_questions: Research questions to organize findings.
+        scope: Optional scope or jurisdiction focus.
+
+    Returns:
+        Dictionary with a markdown summary and structured issue map entries.
+    """
+
+    if not citations:
+        return {"error": "At least one citation is required"}
+
+    questions = _format_key_questions(key_questions or [])
+    mermaid_generator = MermaidGenerator()
+
+    case_results = []
+    for citation in citations:
+        case_results.append(
+            await _analyze_citation(citation, scope, mermaid_generator, request_id)
+        )
+
+    issue_entries = []
+    for question in questions or ["General application"]:
+        entry_cases = []
+        for case in case_results:
+            entry_cases.append(
+                {
+                    "citation": case.get("citation"),
+                    "case_name": case.get("case_name"),
+                    "summary": case.get("summary"),
+                    "treatment": case.get("treatment"),
+                    "network_statistics": case.get("network", {}).get("statistics"),
+                }
+            )
+
+        issue_entries.append(
+            {
+                "question": question,
+                "related_cases": entry_cases,
+                "scope": scope,
+            }
+        )
+
+    summary_lines = ["# Issue Map", "## Questions"]
+    for entry in issue_entries:
+        summary_lines.append(f"- {entry['question']}")
+
+    summary_lines.append("\n## Related Authorities")
+    for case in case_results:
+        if case.get("error"):
+            summary_lines.append(f"- **{case['citation']}**: {case['error']}")
+            continue
+        summary = case.get("summary") or "No treatment summary available"
+        summary_lines.append(
+            f"- **{case.get('citation')} – {case.get('case_name', 'Unknown case')}**: {summary}"
+        )
+
+    log_event(
+        logger,
+        "Issue map generated",
+        tool_name="issue_map",
+        request_id=request_id,
+        query_params={"citation_count": len(citations), "question_count": len(issue_entries)},
+    )
+
+    return {
+        "summary_markdown": "\n".join(summary_lines),
+        "issues": issue_entries,
+        "cases": case_results,
+        "key_questions": questions,
+        "scope": scope,
+    }
