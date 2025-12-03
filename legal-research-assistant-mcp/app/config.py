@@ -47,13 +47,32 @@ class Settings(BaseSettings):
         default=1.0,
         description="Initial backoff (seconds) for retrying CourtListener API requests",
     )
+    # Cache configuration
+    cache_enabled: bool = Field(
+        default=True,
+        description="Global master switch for caching",
+    )
+    cache_dir: Path = Field(
+        default=Path(".cache"),
+        description="Base directory for all cache data",
+    )
     courtlistener_cache_dir: Path = Field(
         default=Path(".cache/courtlistener"),
         description="Directory for caching CourtListener API responses",
     )
-    courtlistener_cache_ttl_seconds: int = Field(
-        default=3600,
-        description="Time-to-live (seconds) for cached CourtListener responses",
+
+    # Granular TTLs
+    courtlistener_ttl_metadata: int = Field(
+        default=86400,  # 24 hours
+        description="TTL (seconds) for case metadata",
+    )
+    courtlistener_ttl_text: int = Field(
+        default=604800,  # 7 days
+        description="TTL (seconds) for opinion text",
+    )
+    courtlistener_ttl_search: int = Field(
+        default=3600,  # 1 hour
+        description="TTL (seconds) for search results",
     )
 
     # Server configuration

@@ -84,34 +84,24 @@ cd /Users/mikesapp/Desktop/legal-research-assistant-mcp
 # Install dependencies
 uv sync
 
-# Copy environment configuration
+# Copy environment configuration template and customize
 cp .env.example .env
 
-# Add your CourtListener API key to .env
+# Add your CourtListener API key (or COURTLISTENER_API_KEY) to .env
 echo "COURT_LISTENER_API_KEY=your_key_here" >> .env
 ```
 
 ### Configuration
 
-Edit `.env` with your settings:
+Use `.env.example` as a reference for available settings and copy it to `.env` to get started. Key options include:
 
-```bash
-# Required
-COURT_LISTENER_API_KEY=your_key_here
+- `COURT_LISTENER_API_KEY` / `COURTLISTENER_API_KEY` aliases for the CourtListener API key
+- Connection, timeout, and retry settings for CourtListener requests
+- Cache directories/TTLs for CourtListener responses and citation networks
+- Logging level/format/date configuration
+- Analysis limits such as confidence thresholds, citing-case limits, full-text fetch counts, and network depth
 
-# Optional
-LOG_LEVEL=INFO
-DEBUG=false
-
-# Treatment Analysis Configuration
-MAX_CITING_CASES=100
-FETCH_FULL_TEXT_STRATEGY=smart  # Options: smart, always, negative_only, never
-MAX_FULL_TEXT_FETCHES=10
-
-# Network Configuration
-NETWORK_MAX_DEPTH=2
-NETWORK_MAX_NODES=100
-```
+After copying the template, adjust values in `.env` to match your environment and preferences.
 
 ### Running the Server
 

@@ -19,7 +19,9 @@ from fastmcp import FastMCP
 
 from app.config import settings
 from app.logging_utils import log_event
+from app.tools.cache_tools import cache_server
 from app.tools.network import network_server
+from app.tools.research import research_server
 from app.tools.search import search_server
 from app.tools.treatment import treatment_server
 from app.tools.verification import verification_server
@@ -91,6 +93,15 @@ async def setup() -> None:
         event="server_setup",
     )
 
+    # Import cache management tools
+    await mcp.import_server(cache_server)
+    log_event(
+        logger,
+        "Imported cache management tools",
+        tool_name="server",
+        event="server_setup",
+    )
+
     # Import treatment analysis tools
     await mcp.import_server(treatment_server)
     log_event(
@@ -114,6 +125,15 @@ async def setup() -> None:
     log_event(
         logger,
         "Imported citation network analysis tools",
+        tool_name="server",
+        event="server_setup",
+    )
+
+    # Import research orchestration tools
+    await mcp.import_server(research_server)
+    log_event(
+        logger,
+        "Imported research orchestration tools",
         tool_name="server",
         event="server_setup",
     )

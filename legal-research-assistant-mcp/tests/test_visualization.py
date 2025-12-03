@@ -70,6 +70,8 @@ def mock_mermaid_generator(mocker):
     instance.generate_graph.return_value = "graph TD\nA-->B"
     instance.generate_timeline.return_value = "timeline\n2000 : Event"
     instance.generate_summary_stats.return_value = "Summary stats"
+    instance.generate_graphml.return_value = "<graphml />"
+    instance.generate_json_graph.return_value = {"nodes": [], "edges": [], "root": "410 U.S. 113"}
     return instance
 
 @pytest.fixture
@@ -118,12 +120,16 @@ async def test_basic_visualization(mock_client, mock_citation_network_builder, m
         citation="410 U.S. 113",
         diagram_type="flowchart",
         direction="TB",
+        include_graphml=True,
+        include_json=True,
         max_nodes=10,
     )
 
     assert result["citation"] == "410 U.S. 113"
     assert "mermaid_syntax" in result
     assert result["mermaid_syntax"] == "graph TD\nA-->B"
+    assert result["graphml"] == "<graphml />"
+    assert result["json_graph"]["root"] == "410 U.S. 113"
 
     mock_citation_network_builder.build_network.assert_called()
     mock_mermaid_generator.generate_flowchart.assert_called()

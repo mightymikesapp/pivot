@@ -266,14 +266,29 @@ async def filter_citation_network_impl(
 
 
 async def get_network_statistics_impl(
-    citation: str, max_nodes: int = 100, request_id: str | None = None
+    citation: str,
+    max_nodes: int = 100,
+    request_id: str | None = None,
+    enable_advanced_metrics: bool = True,
+    enable_community_detection: bool = True,
+    weight_by_court_level: bool = False,
+    weight_by_treatment_polarity: bool = False,
 ) -> dict[str, Any]:
     """Implementation of get_network_statistics."""
+    query_params = {
+        "citation": citation,
+        "max_nodes": max_nodes,
+        "enable_advanced_metrics": enable_advanced_metrics,
+        "enable_community_detection": enable_community_detection,
+        "weight_by_court_level": weight_by_court_level,
+        "weight_by_treatment_polarity": weight_by_treatment_polarity,
+    }
+
     with log_operation(
         logger,
         tool_name="get_network_statistics",
         request_id=request_id,
-        query_params={"citation": citation, "max_nodes": max_nodes},
+        query_params=query_params,
         event="get_network_statistics",
     ):
         # Build network with treatments
@@ -316,6 +331,131 @@ async def get_network_statistics_impl(
         (citation_count * 0.5) + (treatment_diversity * 10) + (temporal_span * 2),
     )
 
+    # Build graph for advanced metrics
+    graph_metrics: dict[str, Any] = {
+        "config": {
+            "enable_advanced_metrics": enable_advanced_metrics,
+            "enable_community_detection": enable_community_detection,
+            "weight_by_court_level": weight_by_court_level,
+            "weight_by_treatment_polarity": weight_by_treatment_polarity,
+        }
+    }
+
+    top_ranked_nodes: dict[str, list[tuple[str, float]]] = {}
+
+    if enable_advanced_metrics:
+        import networkx as nx
+
+        def court_level_weight(court: str | None) -> float:
+            if not court or not weight_by_court_level:
+                return 1.0
+
+            normalized = court.lower()
+            # Basic heuristic weighting by court hierarchy keywords/ids
+            court_weights = {
+                "scotus": 2.0,
+                "supreme": 1.8,
+                "ca": 1.5,  # circuit courts
+                "cir": 1.5,
+                "app": 1.2,  # appellate
+                "dist": 1.0,  # district / lower courts
+                "trial": 1.0,
+            }
+
+            for key, weight in court_weights.items():
+                if key in normalized:
+                    return weight
+            return 1.0
+
+        def treatment_weight(treatment: str | None) -> float:
+            if not treatment or not weight_by_treatment_polarity:
+                return 1.0
+
+            polarity_weights = {
+                "positive": 1.2,
+                "followed": 1.2,
+                "cited": 1.1,
+                "neutral": 1.0,
+                "distinguished": 0.9,
+                "questioned": 0.8,
+                "criticized": 0.8,
+                "overruled": 0.5,
+                "negative": 0.5,
+            }
+
+            normalized = treatment.lower()
+            for key, weight in polarity_weights.items():
+                if key in normalized:
+                    return weight
+            return 1.0
+
+        graph = nx.DiGraph()
+        node_lookup = {node["citation"]: node for node in network["nodes"]}
+
+        for node in network["nodes"]:
+            graph.add_node(
+                node["citation"],
+                case_name=node["case_name"],
+                court=node.get("court"),
+                date_filed=node.get("date_filed"),
+            )
+
+        for edge in network["edges"]:
+            from_node = node_lookup.get(edge["from_citation"])
+            to_node = node_lookup.get(edge["to_citation"])
+
+            if not from_node or not to_node:
+                continue
+
+            weight = court_level_weight(from_node.get("court"))
+            weight *= treatment_weight(edge.get("treatment"))
+
+            graph.add_edge(
+                edge["from_citation"],
+                edge["to_citation"],
+                weight=weight,
+                treatment=edge.get("treatment"),
+                confidence=edge.get("confidence"),
+            )
+
+        pagerank_scores = {}
+        eigenvector_scores = {}
+        community_assignments: dict[str, int] | None = None
+
+        if graph.number_of_nodes() > 0:
+            pagerank_scores = nx.pagerank(graph, weight="weight")
+            top_ranked_nodes["pagerank"] = sorted(
+                pagerank_scores.items(), key=lambda x: x[1], reverse=True
+            )[:5]
+
+            try:
+                eigenvector_scores = nx.eigenvector_centrality(
+                    graph, weight="weight", max_iter=500
+                )
+                top_ranked_nodes["eigenvector_centrality"] = sorted(
+                    eigenvector_scores.items(), key=lambda x: x[1], reverse=True
+                )[:5]
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning("Eigenvector centrality failed: %s", exc)
+
+            if enable_community_detection and graph.number_of_edges() > 0:
+                try:
+                    communities = list(
+                        nx.algorithms.community.greedy_modularity_communities(
+                            graph.to_undirected(), weight="weight"
+                        )
+                    )
+                    community_assignments = {}
+                    for idx, community in enumerate(communities):
+                        for citation in community:
+                            community_assignments[citation] = idx
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.warning("Community detection failed: %s", exc)
+
+        graph_metrics["pagerank"] = pagerank_scores
+        graph_metrics["eigenvector_centrality"] = eigenvector_scores
+        graph_metrics["communities"] = community_assignments
+
     log_event(
         logger,
         "Network statistics computed",
@@ -334,6 +474,8 @@ async def get_network_statistics_impl(
         "temporal_distribution": temporal,
         "court_distribution": court_dist,
         "influence_score": round(influence_score, 2),
+        "graph_metrics": graph_metrics,
+        "top_ranked_nodes": top_ranked_nodes,
         "insights": {
             "most_active_year": max(temporal.items(), key=lambda x: x[1])[0]
             if temporal
@@ -353,6 +495,13 @@ async def visualize_citation_network_impl(
     diagram_type: str = "flowchart",
     direction: str = "TB",
     color_by_treatment: bool = True,
+    color_by_court: bool = True,
+    node_size_by: str | None = None,
+    show_legend: bool = True,
+    court_palette: dict[str, str] | None = None,
+    treatment_palette: dict[str, str] | None = None,
+    include_graphml: bool = False,
+    include_json: bool = False,
     max_nodes: int = 50,
     request_id: str | None = None,
 ) -> dict[str, Any]:
@@ -362,6 +511,11 @@ async def visualize_citation_network_impl(
         "diagram_type": diagram_type,
         "direction": direction,
         "color_by_treatment": color_by_treatment,
+        "color_by_court": color_by_court,
+        "node_size_by": node_size_by,
+        "show_legend": show_legend,
+        "include_graphml": include_graphml,
+        "include_json": include_json,
         "max_nodes": max_nodes,
     }
 
@@ -404,6 +558,11 @@ async def visualize_citation_network_impl(
             direction=direction,
             include_dates=True,
             color_by_treatment=color_by_treatment,
+            color_by_court=color_by_court,
+            node_size_by=node_size_by,
+            court_palette=court_palette,
+            treatment_palette=treatment_palette,
+            show_legend=show_legend,
         )
 
     if diagram_type == "graph" or diagram_type == "all":
@@ -411,6 +570,10 @@ async def visualize_citation_network_impl(
             network,
             direction=direction,
             show_treatments=True,
+            color_by_court=color_by_court,
+            node_size_by=node_size_by,
+            court_palette=court_palette,
+            show_legend=show_legend,
         )
 
     if diagram_type == "timeline" or diagram_type == "all":
@@ -418,6 +581,9 @@ async def visualize_citation_network_impl(
 
     # Generate summary
     summary = generator.generate_summary_stats(network)
+
+    graphml = generator.generate_graphml(network) if include_graphml else None
+    json_graph = generator.generate_json_graph(network) if include_json else None
 
     # Get the primary diagram
     primary_diagram = diagrams.get(diagram_type, diagrams.get("flowchart", ""))
@@ -427,6 +593,8 @@ async def visualize_citation_network_impl(
         "case_name": network["root_case_name"],
         "mermaid_syntax": primary_diagram,
         "all_diagrams": diagrams if diagram_type == "all" else None,
+        "graphml": graphml,
+        "json_graph": json_graph,
         "summary_stats": summary,
         "node_count": len(network["nodes"]),
         "edge_count": len(network["edges"]),
@@ -434,7 +602,10 @@ async def visualize_citation_network_impl(
             "To use in Obsidian:\n"
             "1. Copy the mermaid_syntax\n"
             "2. Paste in your note between ```mermaid and ``` tags\n"
-            "3. The diagram will render automatically"
+            "3. The diagram will render automatically\n\n"
+            "Additional options: set node_size_by to 'citation' or 'authority' for emphasis,\n"
+            "toggle color_by_court/color_by_treatment to change palettes,\n"
+            "and enable include_graphml/include_json for exports to other tools."
         ),
     }
 
@@ -631,7 +802,13 @@ async def filter_citation_network(
 
 @network_server.tool()
 async def get_network_statistics(
-    citation: str, max_nodes: int = 100, request_id: str | None = None
+    citation: str,
+    max_nodes: int = 100,
+    request_id: str | None = None,
+    enable_advanced_metrics: bool = True,
+    enable_community_detection: bool = True,
+    weight_by_court_level: bool = False,
+    weight_by_treatment_polarity: bool = False,
 ) -> dict[str, Any]:
     """Get statistical analysis of a citation network.
 
@@ -640,6 +817,10 @@ async def get_network_statistics(
     Args:
         citation: The citation to analyze
         max_nodes: Maximum number of nodes to include in analysis
+        enable_advanced_metrics: Whether to compute PageRank/eigenvector metrics
+        enable_community_detection: Whether to cluster/community detect (costly)
+        weight_by_court_level: Weight edges by inferred court hierarchy when True
+        weight_by_treatment_polarity: Weight edges by treatment sentiment when True
 
     Returns:
         Dictionary containing:
@@ -649,7 +830,15 @@ async def get_network_statistics(
         - court_distribution: Which courts cite this case most
         - influence_score: Composite score of case influence
     """
-    return await get_network_statistics_impl(citation, max_nodes, request_id=request_id)
+    return await get_network_statistics_impl(
+        citation,
+        max_nodes,
+        request_id=request_id,
+        enable_advanced_metrics=enable_advanced_metrics,
+        enable_community_detection=enable_community_detection,
+        weight_by_court_level=weight_by_court_level,
+        weight_by_treatment_polarity=weight_by_treatment_polarity,
+    )
 
 
 @network_server.tool()
