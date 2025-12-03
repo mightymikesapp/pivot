@@ -422,22 +422,37 @@ legal-research-assistant-mcp/
 - [x] Citation network construction
 - [x] Mermaid diagram generation
 - [x] Comprehensive markdown reports
-- [ ] Tighten repository hygiene (.gitignore updates, clearer defaults)
-- [ ] Centralized configuration management with sensible overrides
-- [ ] Structured logging with correlation metadata
-- [ ] CI pipeline with pytest, ruff, mypy, and coverage gates
-- [ ] Resilient I/O (caching, retries, and sane timeouts)
-- [ ] Testing split between fast unit checks and integration suites
-- [ ] Research workflow helpers (pipeline runner, issue map generation)
-- [ ] Citation verification improvements with grounding checks
-- [ ] Advanced citation graph analytics (weighted edges, clustering)
-- [ ] Richer visualizations and export formats
+
+### 🎯 High-impact next tasks
+
+1) **Reliability and hygiene**
+- [ ] Tighten repository hygiene (.gitignore coverage, clearer defaults)
+- [ ] Centralize configuration with .env/env vars for CourtListener, timeouts, retries, and cache controls
+- [ ] Implement structured logging with correlation/request metadata and tool context
+
+2) **Quality gates and repeatability**
+- [ ] Add CI pipeline running `pytest` (fast unit suite), `ruff`, `mypy`, and coverage thresholds
+- [ ] Split tests into fast unit checks vs. flagged integration suites for external calls
+
+3) **Resilience for CourtListener and other external calls**
+- [ ] Add caching with sensible TTLs for case metadata and query responses
+- [ ] Wrap external calls with timeouts and retry/backoff policies; surface partial results with warnings
+
+4) **User-facing research helpers**
+- [ ] Build end-to-end research workflow helpers (e.g., `run_research_pipeline`, `issue_map`)
+- [ ] Extend citation verification with grounding checks and better error surfacing
+
+5) **Authority-aware analytics and visualization**
+- [ ] Add weighted/clustered citation graph analytics (authority weighting, clustering, PageRank/centrality)
+- [ ] Enhance visualizations and export formats (court/treatment coloring, node sizing, GraphML/JSON exports)
+
+### 📈 Longer-horizon items
+
 - [ ] Document uploads for user-provided sources
 - [ ] Generative helpers (memo and outline builders)
 - [ ] Semantic similarity search across corpora
 - [ ] Obsidian plugin integration
 - [ ] Batch processing pipelines
-- [ ] Citation graph algorithms (PageRank, centrality)
 - [ ] Machine learning treatment classification
 - [ ] Multi-jurisdiction support
 - [ ] Export to citation management tools
