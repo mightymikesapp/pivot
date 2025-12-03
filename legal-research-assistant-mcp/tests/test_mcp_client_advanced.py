@@ -13,6 +13,9 @@ from app.mcp_client import CourtListenerClient, get_client
 from app.config import Settings
 
 
+pytestmark = pytest.mark.integration
+
+
 @pytest.fixture
 def mock_settings(tmp_path):
     return Settings(

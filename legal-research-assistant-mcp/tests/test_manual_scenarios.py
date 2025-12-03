@@ -7,6 +7,9 @@ import pytest
 from app.tools.treatment import check_case_validity_impl, get_citing_cases_impl
 
 
+pytestmark = pytest.mark.integration
+
+
 @pytest.mark.asyncio
 async def test_well_known_case(mock_client):
     """Test with a well-known case."""
