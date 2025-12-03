@@ -22,6 +22,7 @@ from app.logging_utils import log_event
 from app.tools.cache_tools import cache_server
 from app.tools.network import network_server
 from app.tools.research import research_server
+from app.tools.search import search_server
 from app.tools.treatment import treatment_server
 from app.tools.verification import verification_server
 
@@ -58,7 +59,7 @@ def health_check() -> dict[str, Any]:
             "treatment_analysis",
             "citation_networks",
             "quote_verification",
-            "semantic_search (planned)",
+            "semantic_search",
         ],
         "config": {
             "courtlistener_mcp_url": settings.courtlistener_mcp_url,
@@ -133,6 +134,15 @@ async def setup() -> None:
     log_event(
         logger,
         "Imported research orchestration tools",
+        tool_name="server",
+        event="server_setup",
+    )
+
+    # Import semantic search tools
+    await mcp.import_server(search_server)
+    log_event(
+        logger,
+        "Imported semantic search tools",
         tool_name="server",
         event="server_setup",
     )

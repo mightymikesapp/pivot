@@ -1,6 +1,7 @@
 # Legal Research Assistant MCP
 
-An advanced Model Context Protocol (MCP) server providing intelligent legal research capabilities built on top of CourtListener. This server adds treatment analysis, citation networks, quote verification, and advanced visualizations to enhance legal research workflows in Obsidian and other MCP-compatible environments.
+An advanced Model Context Protocol (MCP) server providing intelligent legal research capabilities built on top of CourtListener.
+This server adds treatment analysis, citation networks, quote verification, and advanced visualizations to enhance legal research workflows in Obsidian and other MCP-compatible environments.
 
 ## 🎯 Features
 
