@@ -208,7 +208,9 @@ async def test_find_citing_cases_all_fail(client):
     client.client.request.side_effect = [r1, httpx.HTTPError("Fail")]
 
     result = await client.find_citing_cases("123 U.S. 456")
-    assert result == []
+    assert result["results"] == []
+    assert result["incomplete_data"] is True
+    assert result["failed_requests"]
 
 
 @pytest.mark.asyncio
@@ -260,7 +262,7 @@ async def test_find_citing_cases_caching(client):
     client._request = AsyncMock(return_value=mock_response)
 
     first = await client.find_citing_cases("410 U.S. 113", limit=10)
-    assert first == [{"case_name": "Test"}]
+    assert first["results"] == [{"case_name": "Test"}]
     assert client._request.await_count == 1
 
     client._request.reset_mock()

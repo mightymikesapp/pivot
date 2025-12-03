@@ -171,8 +171,9 @@ async def test_find_citing_cases(client_instance):
     client_instance.client.request = mock_request
 
     result = await client_instance.find_citing_cases("410 U.S. 113")
-    assert len(result) == 1
-    assert result[0]["caseName"] == "Citing Case"
+    assert len(result["results"]) == 1
+    assert result["results"][0]["caseName"] == "Citing Case"
+    assert result["failed_requests"] == []
 
     # Verify cache
     client_instance.cache_manager.get.assert_called_with(
@@ -203,8 +204,9 @@ async def test_find_citing_cases_retry(client_instance):
 
     result = await client_instance.find_citing_cases("410 U.S. 113")
 
-    assert len(result) == 1
-    assert result[0]["caseName"] == "Success"
+    assert len(result["results"]) == 1
+    assert result["results"][0]["caseName"] == "Success"
+    assert result["warnings"]
 
 
 @pytest.mark.asyncio

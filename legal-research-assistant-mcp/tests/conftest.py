@@ -29,7 +29,13 @@ def mock_client(mocker):
     client_mock.lookup_citation.return_value = roe_case
 
     # Mock find_citing_cases
-    client_mock.find_citing_cases.return_value = [citing_case]
+    client_mock.find_citing_cases.return_value = {
+        "results": [citing_case],
+        "warnings": [],
+        "failed_requests": [],
+        "incomplete_data": False,
+        "confidence": 1.0,
+    }
 
     # Mock get_opinion_full_text
     client_mock.get_opinion_full_text.return_value = "This case affirms the essential holding of Roe. The right of privacy is broad enough to encompass a woman's decision."
