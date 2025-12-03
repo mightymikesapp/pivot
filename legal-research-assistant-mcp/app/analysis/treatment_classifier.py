@@ -10,7 +10,6 @@ import logging
 import re
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -192,7 +191,7 @@ class TreatmentClassifier:
 
     def classify_treatment(
         self,
-        citing_case: dict[str, Any],
+        citing_case: CourtListenerCase,
         target_citation: str,
         full_text: str | None = None,
     ) -> TreatmentAnalysis:
@@ -508,3 +507,4 @@ class TreatmentClassifier:
             f"Case cited {positive_count + negative_count + neutral_count} times "
             f"with no significant negative treatment."
         )
+from app.types import CourtListenerCase

@@ -19,6 +19,7 @@ from tenacity import AsyncRetrying, RetryError, retry_if_exception, stop_after_a
 from app.cache import CacheManager, CacheType, get_cache_manager
 from app.config import Settings, get_settings
 from app.logging_utils import log_event, log_operation
+from app.types import CourtListenerCase, CourtListenerOpinion
 
 logger = logging.getLogger(__name__)
 
@@ -30,14 +31,14 @@ class CircuitBreakerOpenError(httpx.RequestError):  # type: ignore[misc]
         super().__init__("Circuit breaker open", request=request)
 
 
-class CitingCasesResult(list[dict[str, Any]]):
+class CitingCasesResult(list[CourtListenerCase]):
     """List-like result with metadata for citing cases queries."""
 
     def __init__(
         self,
-        iterable: Iterable[dict[str, Any]] | None = None,
+        iterable: Iterable[CourtListenerCase] | None = None,
         *,
-        failed_requests: list[dict[str, Any]] | None = None,
+        failed_requests: list[dict[str, object]] | None = None,
         confidence: float = 1.0,
     ) -> None:
         super().__init__(iterable or [])
@@ -156,7 +157,7 @@ class CourtListenerClient:
         order_by: str | None = None,
         limit: int = 20,
         request_id: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         """Search for legal opinions.
 
         Args:
@@ -246,7 +247,7 @@ class CourtListenerClient:
 
     async def get_opinion(
         self, opinion_id: int, request_id: str | None = None
-    ) -> dict[str, Any]:
+    ) -> CourtListenerOpinion:
         """Get detailed information about a specific opinion.
 
         Args:
@@ -378,7 +379,7 @@ class CourtListenerClient:
 
     async def lookup_citation(
         self, citation: str, request_id: str | None = None
-    ) -> dict[str, Any]:
+    ) -> CourtListenerCase:
         """Look up a case by citation.
 
         Args:
@@ -421,7 +422,7 @@ class CourtListenerClient:
                 data = cast(dict[str, Any], response.json())
 
                 if not data.get("results"):
-                    return {"error": "Citation not found", "citation": citation}
+                    return cast(CourtListenerCase, {"error": "Citation not found", "citation": citation})
 
                 # Try to find the case that HAS this citation (not just mentions it)
                 # Look for the citation in the case's own citation list
@@ -479,7 +480,7 @@ class CourtListenerClient:
         citation: str,
         limit: int = 100,
         request_id: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         """Find cases that cite a given citation.
 
         Args:
@@ -506,8 +507,8 @@ class CourtListenerClient:
             query_params={"citation": citation, "limit": limit},
             event="find_citing_cases",
         ):
-            aggregated_results: list[dict[str, Any]] = []
-            failed_requests: list[dict[str, Any]] = []
+            aggregated_results: list[CourtListenerCase] = []
+            failed_requests: list[dict[str, object]] = []
             warnings: list[str] = []
             confidence = 1.0
 
@@ -589,7 +590,7 @@ class CourtListenerClient:
 
             # Deduplicate results while preserving order
             seen_ids: set[Any] = set()
-            deduped_results: list[dict[str, Any]] = []
+            deduped_results: list[CourtListenerCase] = []
             for result in aggregated_results:
                 identifier = result.get("id") or result.get("absolute_url") or id(result)
                 if identifier in seen_ids:

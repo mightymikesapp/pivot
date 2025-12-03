@@ -1,7 +1,7 @@
 """MCP tools for citation network analysis."""
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 from fastmcp import FastMCP
 
@@ -25,7 +25,7 @@ async def build_citation_network_impl(
     max_nodes: int = 100,
     include_treatments: bool = True,
     request_id: str | None = None,
-) -> dict[str, Any]:
+) -> CitationNetworkResult:
     """Implementation of build_citation_network."""
     query_params = {
         "citation": citation,
@@ -63,7 +63,7 @@ async def build_citation_network_impl(
         citing_cases_result = await client.find_citing_cases(
             citation, limit=max_nodes, request_id=request_id
         )
-        citing_cases = citing_cases_result["results"]
+        citing_cases = cast(list[CourtListenerCase], citing_cases_result["results"])
 
         log_event(
             logger,
@@ -176,7 +176,7 @@ async def filter_citation_network_impl(
     date_before: str | None = None,
     max_nodes: int = 100,
     request_id: str | None = None,
-) -> dict[str, Any]:
+) -> CitationNetworkResult:
     """Implementation of filter_citation_network."""
     query_params = {
         "citation": citation,
@@ -752,7 +752,7 @@ async def build_citation_network(
     max_nodes: int = 100,
     include_treatments: bool = True,
     request_id: str | None = None,
-) -> dict[str, Any]:
+) -> CitationNetworkResult:
     """Build a citation network for a given case.
 
     Creates a graph showing how cases cite each other, starting from the target case.
@@ -787,7 +787,7 @@ async def filter_citation_network(
     date_before: str | None = None,
     max_nodes: int = 100,
     request_id: str | None = None,
-) -> dict[str, Any]:
+) -> CitationNetworkResult:
     """Build a filtered citation network showing only specific relationships.
 
     Useful for focusing on particular types of treatment (e.g., only negative signals)

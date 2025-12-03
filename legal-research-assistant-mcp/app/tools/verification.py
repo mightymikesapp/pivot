@@ -125,7 +125,7 @@ async def verify_quote_impl(
     citation: str,
     pinpoint: str | None = None,
     request_id: str | None = None,
-) -> dict[str, Any]:
+) -> QuoteVerificationResult:
     """Verify a quote appears in the cited source.
 
     Args:
@@ -224,7 +224,7 @@ async def verify_quote_impl(
                 match_offset = 0
 
         # Step 4: Build response
-        response = {
+        response: QuoteVerificationResult = {
             "citation": citation,
             "case_name": case_name,
             "quote": quote,
@@ -238,7 +238,7 @@ async def verify_quote_impl(
 
         mismatch_reasons: list[str] = []
 
-        section_hint: dict[str, Any] | None = None
+        section_hint: dict[str, object] | None = None
         if pinpoint and pinpoint_slice:
             section_hint = {
                 "pinpoint": pinpoint,
@@ -281,7 +281,7 @@ async def verify_quote_impl(
                 match_offset + match.position for match in result.matches
             ]
 
-            grounding: dict[str, Any] = {
+            grounding: QuoteGrounding = {
                 "source_span": {"start": absolute_start, "end": absolute_end},
                 "opinion_section_hint": section_hint,
                 "alignment": {
@@ -416,7 +416,7 @@ async def verify_quote(
     citation: str,
     pinpoint: str | None = None,
     request_id: str | None = None,
-) -> dict[str, Any]:
+) -> QuoteVerificationResult:
     """Verify that a quote accurately appears in the cited case.
 
     This tool fetches the full text of a cited case and verifies that a quote

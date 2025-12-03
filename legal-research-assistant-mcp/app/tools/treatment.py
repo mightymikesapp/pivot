@@ -5,7 +5,6 @@ serving as a free alternative to Shepard's Citations and KeyCite.
 """
 
 import logging
-from typing import Any
 
 from fastmcp import FastMCP
 
@@ -25,7 +24,7 @@ classifier = TreatmentClassifier()
 # Implementation functions (can be called directly or via MCP tools)
 async def check_case_validity_impl(
     citation: str, request_id: str | None = None
-) -> dict[str, Any]:
+) -> TreatmentResult:
     """Check if a case is still good law by analyzing citing cases.
 
     This provides a free alternative to Shepard's Citations and KeyCite by:
@@ -63,7 +62,7 @@ async def check_case_validity_impl(
             limit=settings.max_citing_cases,
             request_id=request_id,
         )
-        citing_cases = citing_cases_result["results"]
+        citing_cases: list[CourtListenerCase] = citing_cases_result["results"]
         log_event(
             logger,
             "Citing cases located",
@@ -79,7 +78,7 @@ async def check_case_validity_impl(
         )
 
         # Step 3: First pass - analyze all cases with snippets
-        initial_treatments = []
+        initial_treatments: list[tuple[CourtListenerCase, TreatmentAnalysis]] = []
         for citing_case in citing_cases:
             analysis = classifier.classify_treatment(citing_case, citation)
             initial_treatments.append((citing_case, analysis))
@@ -105,7 +104,7 @@ async def check_case_validity_impl(
         )
 
         # Step 5: Fetch full text and re-analyze (limited by max_full_text_fetches)
-        treatments = []
+        treatments: list[TreatmentAnalysis] = []
         full_text_count = 0
 
         for citing_case, initial_analysis in initial_treatments:
@@ -331,7 +330,7 @@ treatment_server: FastMCP[ToolPayload] = FastMCP(
 @tool_logging("check_case_validity")
 async def check_case_validity(
     citation: str, request_id: str | None = None
-) -> dict[str, Any]:
+) -> TreatmentResult:
     """Check if a case is still good law by analyzing citing cases.
 
     This tool provides a free alternative to Shepard's Citations and KeyCite by:
