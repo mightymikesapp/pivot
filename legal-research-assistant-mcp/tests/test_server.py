@@ -7,6 +7,8 @@ import pytest
 
 from app.server import mcp, health_check, status
 
+pytestmark = pytest.mark.integration
+
 @pytest.mark.asyncio
 async def test_server_setup():
     """Test server initialization."""

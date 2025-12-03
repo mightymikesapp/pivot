@@ -53,3 +53,13 @@ def mock_client(mocker):
     mocker.patch("app.tools.network.get_client", return_value=client_mock)
 
     return client_mock
+
+
+def pytest_collection_modifyitems(config, items):
+    """Mark tests as unit by default unless explicitly tagged as integration."""
+
+    unit_marker = pytest.mark.unit
+
+    for item in items:
+        if not any(mark.name == "integration" for mark in item.iter_markers()):
+            item.add_marker(unit_marker)
