@@ -1,5 +1,4 @@
 """Tests for manual scenarios (formerly test_manual.py)."""
-
 from unittest.mock import MagicMock
 
 import pytest

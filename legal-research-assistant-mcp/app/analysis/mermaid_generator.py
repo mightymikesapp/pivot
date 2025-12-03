@@ -157,7 +157,10 @@ class MermaidGenerator:
             if color_by_treatment and treatment:
                 style_class = self._get_treatment_style(treatment)
                 lines.append(f'    {from_id} -->|"{edge_text}"| {to_id}')
-                lines.append(f"    linkStyle {len([l for l in lines if '-->' in l]) - 1} stroke:{self._get_color(style_class)},stroke-width:2px")
+                edge_index = sum("-->" in line for line in lines) - 1
+                lines.append(
+                    f"    linkStyle {edge_index} stroke:{self._get_color(style_class)},stroke-width:2px"
+                )
             else:
                 lines.append(f'    {from_id} -->|"{edge_text}"| {to_id}')
 

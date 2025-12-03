@@ -1,6 +1,7 @@
+from unittest.mock import MagicMock, patch
 
 import pytest
-from unittest.mock import MagicMock, patch
+
 from app.analysis.search.vector_store import LegalVectorStore
 
 class TestLegalVectorStore:
@@ -21,7 +22,7 @@ class TestLegalVectorStore:
 
     def test_initialization(self, mock_chroma):
         with patch("chromadb.utils.embedding_functions.SentenceTransformerEmbeddingFunction"):
-            store = LegalVectorStore(persistence_path="./custom_path")
+            LegalVectorStore(persistence_path="./custom_path")
             # Use ANY from unittest.mock, or just don't check the second arg if not needed
             from unittest.mock import ANY
             mock_chroma.assert_called_with(path="custom_path", settings=ANY)

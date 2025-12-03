@@ -1,11 +1,10 @@
 """Tests for MCP server."""
 
-import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
-from app.server import mcp, health_check, status
+from app.server import health_check, mcp, status
 
 pytestmark = pytest.mark.integration
 

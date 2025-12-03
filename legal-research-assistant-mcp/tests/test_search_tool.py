@@ -1,6 +1,8 @@
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 from app.tools.search import semantic_search
 
 @pytest.mark.asyncio

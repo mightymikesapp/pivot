@@ -8,7 +8,6 @@ from fastmcp import FastMCP
 from ..analysis.citation_network import CitationNetworkBuilder
 from ..analysis.mermaid_generator import MermaidGenerator
 from ..analysis.treatment_classifier import TreatmentClassifier
-from ..config import get_settings
 from ..logging_utils import log_event, log_operation
 from ..mcp_client import get_client
 
@@ -32,7 +31,6 @@ async def build_citation_network_impl(
         "include_treatments": include_treatments,
     }
 
-    settings = get_settings()
     client = get_client()
 
     with log_operation(
