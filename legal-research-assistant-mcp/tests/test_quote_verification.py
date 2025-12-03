@@ -41,7 +41,8 @@ async def test_verify_quote_found(mock_client, mock_quote_matcher):
     assert result["similarity"] == 0.95
     assert result["citation"] == citation
 
-    mock_client.lookup_citation.assert_called_with(citation)
+    from unittest.mock import ANY
+    mock_client.lookup_citation.assert_called_with(citation, request_id=ANY)
     mock_quote_matcher.verify_quote.assert_called()
 
 @pytest.mark.asyncio
