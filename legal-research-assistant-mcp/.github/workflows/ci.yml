@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+    branches: [main]
 
 permissions:
   contents: read
@@ -33,7 +34,26 @@ jobs:
             ${{ runner.os }}-uv-
 
       - name: Install dependencies
-        run: uv sync --dev
+        env:
+          UV_HTTP_RETRIES: 5
+          UV_HTTP_TIMEOUT: 60
+        run: |
+          for attempt in 1 2 3; do
+            if uv sync --dev; then
+              succeeded=1
+              break
+            fi
+            echo "uv sync attempt ${attempt} failed; retrying in 10s..."
+            sleep 10
+          done
+
+          if [ -z "${succeeded:-}" ]; then
+            echo "uv sync failed after multiple attempts; exporting requirements for pip fallback" >&2
+            uv export --format requirements --dev > /tmp/requirements.txt
+
+            python -m pip install --upgrade pip
+            python -m pip install --retries 5 --timeout 60 -r /tmp/requirements.txt
+          fi
 
       - name: Ruff format
         run: uv run ruff format --check .
@@ -42,7 +62,7 @@ jobs:
         run: uv run ruff check .
 
       - name: Mypy
-        run: uv run mypy .
+        run: uv run mypy --strict .
 
       - name: Unit tests
         run: |
@@ -53,5 +73,5 @@ jobs:
       - name: Integration tests
         run: |
           uv run pytest -m "integration" \
-            --cov=app --cov-report=term --cov-append \
+            --cov=app --cov-report=term --cov-report=xml --cov-append \
             --cov-fail-under=80
