@@ -11,6 +11,7 @@ from fastmcp import FastMCP
 
 from app.analysis.treatment_classifier import TreatmentClassifier
 from app.config import settings
+from app.logging_utils import log_event, log_operation
 from app.mcp_client import get_client
 
 logger = logging.getLogger(__name__)
@@ -20,7 +21,9 @@ classifier = TreatmentClassifier()
 
 
 # Implementation functions (can be called directly or via MCP tools)
-async def check_case_validity_impl(citation: str) -> dict[str, Any]:
+async def check_case_validity_impl(
+    citation: str, request_id: str | None = None
+) -> dict[str, Any]:
     """Check if a case is still good law by analyzing citing cases.
 
     This provides a free alternative to Shepard's Citations and KeyCite by:
@@ -34,14 +37,17 @@ async def check_case_validity_impl(citation: str) -> dict[str, Any]:
     Returns:
         Dictionary containing validity assessment and analysis
     """
-    logger.info(f"Checking validity of citation: {citation}")
-
     client = get_client()
 
-    try:
+    with log_operation(
+        logger,
+        tool_name="check_case_validity",
+        request_id=request_id,
+        query_params={"citation": citation},
+        event="check_case_validity",
+    ):
         # Step 1: Look up the target case
-        logger.info(f"Looking up target case: {citation}")
-        target_case = await client.lookup_citation(citation)
+        target_case = await client.lookup_citation(citation, request_id=request_id)
 
         if "error" in target_case:
             return {
@@ -50,13 +56,20 @@ async def check_case_validity_impl(citation: str) -> dict[str, Any]:
             }
 
         # Step 2: Find citing cases
-        logger.info(f"Finding cases citing: {citation}")
         citing_cases = await client.find_citing_cases(
             citation,
             limit=settings.max_citing_cases,
+            request_id=request_id,
         )
-
-        logger.info(f"Found {len(citing_cases)} citing cases")
+        log_event(
+            logger,
+            "Citing cases located",
+            tool_name="check_case_validity",
+            request_id=request_id,
+            query_params={"citation": citation},
+            citation_count=len(citing_cases),
+            event="citing_cases_fetched",
+        )
 
         # Step 3: First pass - analyze all cases with snippets
         initial_treatments = []
@@ -72,8 +85,16 @@ async def check_case_validity_impl(citation: str) -> dict[str, Any]:
             if classifier.should_fetch_full_text(initial_analysis, strategy):
                 cases_for_full_text.append((citing_case, initial_analysis))
 
-        logger.info(
-            f"Strategy '{strategy}': {len(cases_for_full_text)} cases selected for full text analysis"
+        log_event(
+            logger,
+            "Full text selection complete",
+            tool_name="check_case_validity",
+            request_id=request_id,
+            query_params={"citation": citation},
+            extra_context={
+                "strategy": strategy,
+                "selected_for_full_text": len(cases_for_full_text),
+            },
         )
 
         # Step 5: Fetch full text and re-analyze (limited by max_full_text_fetches)
@@ -98,9 +119,10 @@ async def check_case_validity_impl(citation: str) -> dict[str, Any]:
                     if opinion_ids:
                         # Fetch full text for first opinion
                         opinion_id = opinion_ids[0]
-                        logger.info(f"Fetching full text for opinion {opinion_id}")
 
-                        full_text = await client.get_opinion_full_text(opinion_id)
+                        full_text = await client.get_opinion_full_text(
+                            opinion_id, request_id=request_id
+                        )
 
                         if full_text:
                             # Re-analyze with full text
@@ -109,9 +131,13 @@ async def check_case_validity_impl(citation: str) -> dict[str, Any]:
                             )
                             treatments.append(enhanced_analysis)
                             full_text_count += 1
-                            logger.info(
-                                f"Enhanced analysis: {enhanced_analysis.treatment_type.value} "
-                                f"(confidence: {enhanced_analysis.confidence:.2f})"
+                            log_event(
+                                logger,
+                                "Enhanced analysis with full text",
+                                tool_name="check_case_validity",
+                                request_id=request_id,
+                                query_params={"citation": citation},
+                                event="full_text_analysis",
                             )
                         else:
                             # No full text available, use initial analysis
@@ -121,13 +147,29 @@ async def check_case_validity_impl(citation: str) -> dict[str, Any]:
                         treatments.append(initial_analysis)
 
                 except Exception as e:
-                    logger.warning(f"Failed to fetch full text: {e}, using snippet analysis")
+                    log_event(
+                        logger,
+                        f"Failed to fetch full text: {e}, using snippet analysis",
+                        level=logging.WARNING,
+                        tool_name="check_case_validity",
+                        request_id=request_id,
+                        query_params={"citation": citation},
+                        event="full_text_error",
+                    )
                     treatments.append(initial_analysis)
             else:
                 # Use initial analysis
                 treatments.append(initial_analysis)
 
-        logger.info(f"Completed analysis: {full_text_count} full texts fetched")
+        log_event(
+            logger,
+            "Completed analysis",
+            tool_name="check_case_validity",
+            request_id=request_id,
+            query_params={"citation": citation},
+            citation_count=len(treatments),
+            extra_context={"full_text_count": full_text_count},
+        )
 
         # Step 6: Aggregate treatments
         if treatments:
@@ -182,18 +224,14 @@ async def check_case_validity_impl(citation: str) -> dict[str, Any]:
                 "recommendation": "Case has not been cited. Validity uncertain.",
             }
 
-    except Exception as e:
-        logger.error(f"Error checking case validity: {e}", exc_info=True)
-        return {
-            "error": f"Failed to check case validity: {str(e)}",
-            "citation": citation,
-        }
+    # log_operation will capture errors
 
 
 async def get_citing_cases_impl(
     citation: str,
     treatment_filter: str | None = None,
     limit: int = 20,
+    request_id: str | None = None,
 ) -> dict[str, Any]:
     """Get cases that cite a given citation, optionally filtered by treatment type.
 
@@ -205,13 +243,19 @@ async def get_citing_cases_impl(
     Returns:
         Dictionary containing citing cases with treatment analysis
     """
-    logger.info(f"Getting citing cases for: {citation} (filter={treatment_filter})")
-
     client = get_client()
 
-    try:
+    with log_operation(
+        logger,
+        tool_name="get_citing_cases",
+        request_id=request_id,
+        query_params={"citation": citation, "treatment_filter": treatment_filter, "limit": limit},
+        event="get_citing_cases",
+    ):
         # Find citing cases
-        citing_cases = await client.find_citing_cases(citation, limit=limit)
+        citing_cases = await client.find_citing_cases(
+            citation, limit=limit, request_id=request_id
+        )
 
         # Analyze treatment
         treatments = []
@@ -240,18 +284,20 @@ async def get_citing_cases_impl(
                 }
             )
 
+        log_event(
+            logger,
+            "Citing cases analyzed",
+            tool_name="get_citing_cases",
+            request_id=request_id,
+            query_params={"citation": citation, "treatment_filter": treatment_filter},
+            citation_count=len(treatments),
+        )
+
         return {
             "citation": citation,
             "total_found": len(citing_cases),
             "citing_cases": treatments,
             "filter_applied": treatment_filter,
-        }
-
-    except Exception as e:
-        logger.error(f"Error getting citing cases: {e}", exc_info=True)
-        return {
-            "error": f"Failed to get citing cases: {str(e)}",
-            "citation": citation,
         }
 
 
@@ -263,7 +309,9 @@ treatment_server = FastMCP(
 
 
 @treatment_server.tool()
-async def check_case_validity(citation: str) -> dict[str, Any]:
+async def check_case_validity(
+    citation: str, request_id: str | None = None
+) -> dict[str, Any]:
     """Check if a case is still good law by analyzing citing cases.
 
     This tool provides a free alternative to Shepard's Citations and KeyCite by:
@@ -296,7 +344,7 @@ async def check_case_validity(citation: str) -> dict[str, Any]:
             ...
         }
     """
-    return await check_case_validity_impl(citation)
+    return await check_case_validity_impl(citation, request_id=request_id)
 
 
 @treatment_server.tool()
@@ -304,6 +352,7 @@ async def get_citing_cases(
     citation: str,
     treatment_filter: str | None = None,
     limit: int = 20,
+    request_id: str | None = None,
 ) -> dict[str, Any]:
     """Get cases that cite a given citation, optionally filtered by treatment type.
 
@@ -328,4 +377,6 @@ async def get_citing_cases(
             "filter_applied": "negative"
         }
     """
-    return await get_citing_cases_impl(citation, treatment_filter, limit)
+    return await get_citing_cases_impl(
+        citation, treatment_filter, limit, request_id=request_id
+    )

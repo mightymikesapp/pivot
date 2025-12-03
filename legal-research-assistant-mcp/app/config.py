@@ -6,6 +6,8 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.logging_utils import JsonFormatter
+
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
@@ -58,11 +60,14 @@ class Settings(BaseSettings):
 
     def configure_logging(self) -> None:
         """Configure application logging."""
-        logging.basicConfig(
-            level=getattr(logging, self.log_level.upper()),
-            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
+        root_logger = logging.getLogger()
+        root_logger.setLevel(getattr(logging, self.log_level.upper()))
+
+        # Replace existing handlers with structured JSON output
+        handler = logging.StreamHandler()
+        handler.setFormatter(JsonFormatter())
+
+        root_logger.handlers = [handler]
 
 
 # Global settings instance

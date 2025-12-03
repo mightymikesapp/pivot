@@ -9,6 +9,8 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
 
+from app.logging_utils import log_event
+
 logger = logging.getLogger(__name__)
 
 
@@ -78,7 +80,13 @@ class CitationNetworkBuilder:
         Returns:
             CitationNetwork with nodes and edges
         """
-        logger.info(f"Building citation network for {root_case.get('citation', 'unknown')}")
+        log_event(
+            logger,
+            "Building citation network",
+            tool_name="citation_network_builder",
+            query_params={"root_case": root_case.get("citation")},
+            event="build_network",
+        )
 
         nodes: dict[str, CaseNode] = {}
         edges: list[CitationEdge] = []
@@ -130,9 +138,14 @@ class CitationNetworkBuilder:
             citing_counts[root_citation] += 1
             cited_counts[citing_citation] += 1
 
-        logger.info(
-            f"Built network with {len(nodes)} nodes and {len(edges)} edges "
-            f"(max depth: {max(depth_map.values())})"
+        log_event(
+            logger,
+            "Built citation network",
+            tool_name="citation_network_builder",
+            query_params={"root_case": root_citation},
+            citation_count=len(edges),
+            extra_context={"node_count": len(nodes), "max_depth": max(depth_map.values())},
+            event="build_network_complete",
         )
 
         return CitationNetwork(

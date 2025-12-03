@@ -12,6 +12,8 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 
+from app.logging_utils import log_event, log_operation
+
 logger = logging.getLogger(__name__)
 
 # Load environment variables
@@ -61,6 +63,7 @@ class CourtListenerClient:
         cited_lt: int | None = None,
         order_by: str | None = None,
         limit: int = 20,
+        request_id: str | None = None,
     ) -> dict[str, Any]:
         """Search for legal opinions.
 
@@ -103,21 +106,45 @@ class CourtListenerClient:
         # Use 'hit' parameter like the official MCP
         params["hit"] = min(limit, 100)
 
-        logger.info(f"Searching opinions with params: {params}")
+        with log_operation(
+            logger,
+            tool_name="search_opinions",
+            request_id=request_id,
+            query_params=params,
+            event="courtlistener_search",
+        ):
+            try:
+                response = await self.client.get(
+                    f"{self.BASE_URL}search/",
+                    params=params,
+                    headers=self._get_headers(),
+                )
+                response.raise_for_status()
+                result = response.json()
+                log_event(
+                    logger,
+                    "Opinion search completed",
+                    tool_name="search_opinions",
+                    request_id=request_id,
+                    query_params=params,
+                    citation_count=len(result.get("results", [])),
+                )
+                return result
+            except httpx.HTTPError as e:
+                log_event(
+                    logger,
+                    f"Error searching opinions: {e}",
+                    level=logging.ERROR,
+                    tool_name="search_opinions",
+                    request_id=request_id,
+                    query_params=params,
+                    event="courtlistener_search_error",
+                )
+                raise
 
-        try:
-            response = await self.client.get(
-                f"{self.BASE_URL}search/",
-                params=params,
-                headers=self._get_headers(),
-            )
-            response.raise_for_status()
-            return response.json()
-        except httpx.HTTPError as e:
-            logger.error(f"Error searching opinions: {e}")
-            raise
-
-    async def get_opinion(self, opinion_id: int) -> dict[str, Any]:
+    async def get_opinion(
+        self, opinion_id: int, request_id: str | None = None
+    ) -> dict[str, Any]:
         """Get detailed information about a specific opinion.
 
         Args:
@@ -126,20 +153,42 @@ class CourtListenerClient:
         Returns:
             Dictionary with opinion details including full text
         """
-        logger.info(f"Fetching opinion {opinion_id}")
+        with log_operation(
+            logger,
+            tool_name="get_opinion",
+            request_id=request_id,
+            query_params={"opinion_id": opinion_id},
+            event="courtlistener_get_opinion",
+        ):
+            try:
+                response = await self.client.get(
+                    f"{self.BASE_URL}opinions/{opinion_id}/",
+                    headers=self._get_headers(),
+                )
+                response.raise_for_status()
+                log_event(
+                    logger,
+                    "Opinion retrieved",
+                    tool_name="get_opinion",
+                    request_id=request_id,
+                    query_params={"opinion_id": opinion_id},
+                )
+                return response.json()
+            except httpx.HTTPError as e:
+                log_event(
+                    logger,
+                    f"Error fetching opinion {opinion_id}: {e}",
+                    level=logging.ERROR,
+                    tool_name="get_opinion",
+                    request_id=request_id,
+                    query_params={"opinion_id": opinion_id},
+                    event="courtlistener_get_opinion_error",
+                )
+                raise
 
-        try:
-            response = await self.client.get(
-                f"{self.BASE_URL}opinions/{opinion_id}/",
-                headers=self._get_headers(),
-            )
-            response.raise_for_status()
-            return response.json()
-        except httpx.HTTPError as e:
-            logger.error(f"Error fetching opinion {opinion_id}: {e}")
-            raise
-
-    async def get_opinion_full_text(self, opinion_id: int) -> str:
+    async def get_opinion_full_text(
+        self, opinion_id: int, request_id: str | None = None
+    ) -> str:
         """Get the full text of a specific opinion.
 
         Args:
@@ -148,10 +197,14 @@ class CourtListenerClient:
         Returns:
             Full text of the opinion (plain text format)
         """
-        logger.info(f"Fetching full text for opinion {opinion_id}")
-
-        try:
-            opinion = await self.get_opinion(opinion_id)
+        with log_operation(
+            logger,
+            tool_name="get_opinion_full_text",
+            request_id=request_id,
+            query_params={"opinion_id": opinion_id},
+            event="courtlistener_full_text",
+        ):
+            opinion = await self.get_opinion(opinion_id, request_id=request_id)
 
             # Try different text fields in order of preference
             text_fields = [
@@ -165,18 +218,31 @@ class CourtListenerClient:
             for field in text_fields:
                 if opinion.get(field):
                     text = opinion[field]
-                    logger.info(f"Retrieved {len(text)} chars of text from field '{field}'")
+                    log_event(
+                        logger,
+                        f"Retrieved {len(text)} chars of text from field '{field}'",
+                        tool_name="get_opinion_full_text",
+                        request_id=request_id,
+                        query_params={"opinion_id": opinion_id},
+                        event="courtlistener_full_text",
+                    )
                     return text
 
             # Fallback to empty string if no text available
-            logger.warning(f"No text content found for opinion {opinion_id}")
+            log_event(
+                logger,
+                f"No text content found for opinion {opinion_id}",
+                level=logging.WARNING,
+                tool_name="get_opinion_full_text",
+                request_id=request_id,
+                query_params={"opinion_id": opinion_id},
+                event="courtlistener_full_text_missing",
+            )
             return ""
 
-        except httpx.HTTPError as e:
-            logger.error(f"Error fetching full text for opinion {opinion_id}: {e}")
-            raise
-
-    async def lookup_citation(self, citation: str) -> dict[str, Any]:
+    async def lookup_citation(
+        self, citation: str, request_id: str | None = None
+    ) -> dict[str, Any]:
         """Look up a case by citation.
 
         Args:
@@ -185,16 +251,20 @@ class CourtListenerClient:
         Returns:
             Dictionary with case information
         """
-        logger.info(f"Looking up citation: {citation}")
+        params = {
+            "q": f'"{citation}"',
+            "type": "o",  # Opinion type
+            "order_by": "dateFiled asc",  # Oldest first (original case, not citing cases)
+            "hit": 20,  # Get more results to find the right one
+        }
 
-        try:
-            # Search for the citation
-            params = {
-                "q": f'"{citation}"',
-                "type": "o",  # Opinion type
-                "order_by": "dateFiled asc",  # Oldest first (original case, not citing cases)
-                "hit": 20,  # Get more results to find the right one
-            }
+        with log_operation(
+            logger,
+            tool_name="lookup_citation",
+            request_id=request_id,
+            query_params=params,
+            event="lookup_citation",
+        ):
             response = await self.client.get(
                 f"{self.BASE_URL}search/",
                 params=params,
@@ -216,22 +286,34 @@ class CourtListenerClient:
                     target = citation.replace(" ", "").lower()
 
                     if any(target in nc or nc in target for nc in normalized_citations):
-                        logger.info(f"Found matching case: {result.get('caseName')}")
+                        log_event(
+                            logger,
+                            "Found matching case",
+                            tool_name="lookup_citation",
+                            request_id=request_id,
+                            query_params=params,
+                            event="lookup_citation_match",
+                        )
                         return result
 
             # Fallback: if no exact match found, return oldest result
             # (likely the original case)
-            logger.warning("No exact citation match, returning oldest result")
+            log_event(
+                logger,
+                "No exact citation match, returning oldest result",
+                level=logging.WARNING,
+                tool_name="lookup_citation",
+                request_id=request_id,
+                query_params=params,
+                event="lookup_citation_fallback",
+            )
             return data["results"][0]
-
-        except httpx.HTTPError as e:
-            logger.error(f"Error looking up citation {citation}: {e}")
-            raise
 
     async def find_citing_cases(
         self,
         citation: str,
         limit: int = 100,
+        request_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """Find cases that cite a given citation.
 
@@ -242,16 +324,18 @@ class CourtListenerClient:
         Returns:
             List of citing cases with context
         """
-        logger.info(f"Finding cases citing: {citation}")
+        query_attempts = [
+            f'"{citation}"',  # Simple quoted search - finds cases mentioning citation
+            citation,  # Unquoted
+        ]
 
-        try:
-            # Try different query syntaxes to find citing cases
-            # CourtListener v4 API syntax for citing cases
-            query_attempts = [
-                f'"{citation}"',  # Simple quoted search - finds cases mentioning citation
-                citation,  # Unquoted
-            ]
-
+        with log_operation(
+            logger,
+            tool_name="find_citing_cases",
+            request_id=request_id,
+            query_params={"citation": citation, "limit": limit},
+            event="find_citing_cases",
+        ):
             for query in query_attempts:
                 params = {
                     "q": query,
@@ -259,8 +343,6 @@ class CourtListenerClient:
                     "order_by": "dateFiled desc",  # Most recent first
                     "hit": min(limit, 100),
                 }
-
-                logger.info(f"Trying query: {query}")
 
                 response = await self.client.get(
                     f"{self.BASE_URL}search/",
@@ -271,21 +353,39 @@ class CourtListenerClient:
                 if response.status_code == 200:
                     data = response.json()
                     results = data.get("results", [])
-                    logger.info(f"Found {len(results)} results with query: {query}")
+                    log_event(
+                        logger,
+                        "Found citing cases",
+                        tool_name="find_citing_cases",
+                        request_id=request_id,
+                        query_params=params,
+                        citation_count=len(results),
+                        event="find_citing_cases_success",
+                    )
                     return results
                 else:
-                    logger.warning(
-                        f"Query '{query}' failed with status {response.status_code}, trying next..."
+                    log_event(
+                        logger,
+                        f"Query '{query}' failed with status {response.status_code}, trying next...",
+                        level=logging.WARNING,
+                        tool_name="find_citing_cases",
+                        request_id=request_id,
+                        query_params=params,
+                        event="find_citing_cases_retry",
                     )
                     continue
 
-            # If all attempts failed, raise error
-            logger.error(f"All query attempts failed for citation: {citation}")
+            # If all attempts failed, return empty list with log
+            log_event(
+                logger,
+                f"All query attempts failed for citation: {citation}",
+                level=logging.ERROR,
+                tool_name="find_citing_cases",
+                request_id=request_id,
+                query_params={"citation": citation, "limit": limit},
+                event="find_citing_cases_error",
+            )
             return []
-
-        except httpx.HTTPError as e:
-            logger.error(f"Error finding citing cases for {citation}: {e}")
-            raise
 
 
 # Global client instance
