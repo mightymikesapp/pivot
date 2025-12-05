@@ -173,6 +173,11 @@ async def main() -> None:
         raise
 
 
-if __name__ == "__main__":
+def cli() -> None:
+    """CLI entry point for the legal-research-mcp command."""
     logger.info("Legal Research Assistant MCP starting")
     asyncio.run(main())
+
+
+if __name__ == "__main__":
+    cli()

@@ -19,6 +19,9 @@ dependencies = [
     "tenacity>=9.0.0",
 ]
 
+[project.scripts]
+legal-research-mcp = "app.server:cli"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
