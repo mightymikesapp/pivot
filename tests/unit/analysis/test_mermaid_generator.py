@@ -10,7 +10,7 @@ def test_sanitize_label_escapes_and_truncates():
 
     sanitized = generator._sanitize_label('Case "Name" [v.] {Example}\nLine', max_length=30)
 
-    assert sanitized == "Case 'Name' (v.) (Example) Line"
+    assert sanitized == "Case 'Name' (v.) (Example) ..."
     assert generator._sanitize_label("A" * 50, max_length=10) == "AAAAAAA..."
 
 
