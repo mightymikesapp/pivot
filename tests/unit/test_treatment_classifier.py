@@ -185,6 +185,57 @@ def test_conflicting_treatments(classifier):
     assert agg.positive_count == 2
 
 
+def test_signal_attributes_from_contexts(classifier):
+    """Ensure signals include expected type, name, and position from contexts."""
+    text = (
+        "Background discussion. In 410 U.S. 113 the court overruled prior precedent "
+        "and later followed that reasoning in subsequent decisions."
+    )
+    citation_position = text.index("410 U.S. 113")
+
+    signals = classifier.extract_signals(text, "410 U.S. 113")
+
+    overruled = next(s for s in signals if s.signal == "overruled")
+    followed = next(s for s in signals if s.signal == "followed")
+
+    assert overruled.treatment_type == TreatmentType.NEGATIVE
+    assert overruled.position == citation_position
+    assert "overruled" in overruled.context
+
+    assert followed.treatment_type == TreatmentType.POSITIVE
+    assert followed.position == citation_position
+    assert "followed" in followed.context
+
+
+def test_overlapping_and_absent_signals(classifier):
+    """Handle overlapping positive/negative patterns and missing matches."""
+    overlapping_text = (
+        "When citing 410 U.S. 113, the panel noted it was not followed in one respect "
+        "but ultimately followed its central holding."
+    )
+    citation_position = overlapping_text.index("410 U.S. 113")
+
+    overlapping_signals = classifier.extract_signals(overlapping_text, "410 U.S. 113")
+
+    assert any(
+        s.signal == "not followed"
+        and s.treatment_type == TreatmentType.NEGATIVE
+        and s.position == citation_position
+        for s in overlapping_signals
+    )
+    assert any(
+        s.signal == "followed"
+        and s.treatment_type == TreatmentType.POSITIVE
+        and s.position == citation_position
+        for s in overlapping_signals
+    )
+
+    neutral_text = "The discussion of 410 U.S. 113 focused solely on procedural history."
+    neutral_signals = classifier.extract_signals(neutral_text, "410 U.S. 113")
+
+    assert neutral_signals == []
+
+
 def test_confidence_thresholds(classifier):
     """Test confidence threshold handling at boundaries."""
     # Test critical negative threshold (0.8)

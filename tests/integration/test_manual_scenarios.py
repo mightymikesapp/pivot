@@ -6,7 +6,6 @@ import pytest
 
 from app.tools.treatment import check_case_validity_impl, get_citing_cases_impl
 
-
 pytestmark = pytest.mark.integration
 
 

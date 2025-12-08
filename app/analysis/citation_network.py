@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.logging_utils import log_event
-from app.types import CitationNetworkEdge, CitationNetworkNode, CourtListenerCase
+from app.types import CourtListenerCase
 
 logger = logging.getLogger(__name__)
 

@@ -298,6 +298,19 @@ class QuoteMatcher:
         Returns:
             QuoteVerificationResult with detailed findings
         """
+        if not quote.strip():
+            logger.warning("Empty quote provided; skipping verification")
+            return QuoteVerificationResult(
+                quote=quote,
+                citation=citation,
+                found=False,
+                exact_match=False,
+                similarity=0.0,
+                matches=[],
+                warnings=["No quote provided for verification"],
+                recommendation="Provide a non-empty quote to verify",
+            )
+
         logger.info(f"Verifying quote ({len(quote)} chars) against source ({len(source)} chars)")
 
         # First try exact match

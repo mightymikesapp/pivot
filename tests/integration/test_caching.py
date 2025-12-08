@@ -3,7 +3,6 @@
 Tests cache hit/miss performance, invalidation, and concurrent access.
 """
 
-import json
 import time
 from pathlib import Path
 from threading import Thread
@@ -76,7 +75,6 @@ def test_cache_invalidation(cache_manager):
 
     # Manually expire the cache entry by mocking time
     cache_file = list((cache_manager.base_dir / CacheType.METADATA.value).glob("*.json"))[0]
-    old_time = time.time() - 4000  # Older than default 3600s TTL
     with patch("app.cache.time.time", return_value=time.time() + 4000):
         result = cache_manager.get(CacheType.METADATA, test_key)
 

@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from app.mcp_client import CircuitBreakerOpenError, CourtListenerClient, get_client
-from app.config import Settings
 from app.cache import CacheManager, CacheType
+from app.config import Settings
+from app.mcp_client import CircuitBreakerOpenError, CourtListenerClient
 
 
 @pytest.fixture

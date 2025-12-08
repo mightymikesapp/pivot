@@ -5,7 +5,6 @@ While we call it an MCP client for architectural clarity, it communicates with t
 API directly since MCP-to-MCP communication patterns are still evolving.
 """
 
-import asyncio
 import json
 import logging
 import time
@@ -14,9 +13,15 @@ from pathlib import Path
 from typing import Any, Iterable, cast
 
 import httpx
-from tenacity import AsyncRetrying, RetryError, retry_if_exception, stop_after_attempt, wait_exponential
+from tenacity import (
+    AsyncRetrying,
+    RetryError,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
 
-from app.cache import CacheManager, CacheType, get_cache_manager
+from app.cache import CacheType, get_cache_manager
 from app.config import Settings, get_settings
 from app.logging_utils import log_event, log_operation
 from app.types import CourtListenerCase, CourtListenerOpinion
@@ -558,10 +563,10 @@ class CourtListenerClient:
                     status_code = (
                         e.response.status_code if isinstance(e, httpx.HTTPStatusError) else None
                     )
-                    
+
                     # Safe error message construction
                     error_msg = str(e)
-                    
+
                     failed_requests.append(
                         {
                             "url": f"{self.base_url}search/",
