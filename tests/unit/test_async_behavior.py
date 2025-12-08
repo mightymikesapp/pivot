@@ -5,6 +5,7 @@ and circuit breaker patterns.
 """
 
 import asyncio
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -181,6 +182,9 @@ async def test_circuit_breaker_behavior():
 
     # Wait for timeout and try again
     await asyncio.sleep(0.6)
+    assert breaker.state == "half-open"
+
+    # Next call should succeed (operation is now working)
 
     # Next call should transition through half-open and succeed
     result = await breaker.call(failing_operation)
@@ -294,6 +298,7 @@ async def test_rate_limiting_with_retry():
                 try:
                     self.attempt_times.append(asyncio.get_event_loop().time())
                     return await func(*args, **kwargs)
+                except Exception as e:
                 except Exception:
                     if attempt == self.max_retries - 1:
                         raise
@@ -345,6 +350,7 @@ async def test_task_cancellation():
 
     assert "Task 0 completed" in str(results[0]) or "Task 0 cancelled" in str(results[0])
     # Task 1 should be cancelled
+    assert isinstance(results[1], asyncio.CancelledError)
     assert isinstance(results[1], asyncio.CancelledError) or str(results[1]).startswith("Task 1 cancelled")
 
 

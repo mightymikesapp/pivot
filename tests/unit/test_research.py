@@ -7,6 +7,7 @@ import pytest
 from app.tools.research import (
     _analyze_citation,
     _format_key_questions,
+    issue_map as issue_map_tool,
 )
 from app.tools.research import (
     issue_map as issue_map_tool,

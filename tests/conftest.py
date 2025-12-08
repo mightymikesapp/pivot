@@ -157,6 +157,33 @@ def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
         loop.close()
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Register ini options expected by asyncio-aware tests."""
+    parser.addini(
+        "asyncio_mode",
+        "Asyncio execution mode (provided for compatibility with pytest-asyncio)",
+        default="auto",
+    )
+    parser.addoption(
+        "--run-integration",
+        action="store_true",
+        default=False,
+        help="Include tests marked as integration",
+    )
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_configure(config: pytest.Config) -> None:
+    """Register custom markers used in the test suite."""
+    config.addinivalue_line("markers", "asyncio: mark a coroutine test")
+
+    if config.getoption("--run-integration"):
+        # The default "-m not integration" expression in ``pyproject.toml``
+        # excludes integration tests. Clear it so the explicit flag can
+        # include them without requiring callers to override mark selection.
+        config.option.markexpr = ""
+
+
 @pytest.hookimpl(tryfirst=True)
 def pytest_pycollect_makeitem(collector: pytest.Collector, name: str, obj: object):
     """Collect coroutine test functions as regular pytest functions."""
@@ -172,8 +199,19 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     run_integration = config.getoption("--run-integration")
     skip_integration = pytest.mark.skip(reason="use --run-integration to run integration tests")
     unit_marker = pytest.mark.unit
+    run_integration = config.getoption("--run-integration")
+    skip_integration = pytest.mark.skip(
+        reason="Integration tests require --run-integration"
+    )
 
     for item in items:
+        is_integration = any(mark.name == "integration" for mark in item.iter_markers())
+
+        if is_integration and not run_integration:
+            item.add_marker(skip_integration)
+            continue
+
+        if not is_integration:
         if any(mark.name == "integration" for mark in item.iter_markers()):
             if not run_integration:
                 item.add_marker(skip_integration)

@@ -1,4 +1,8 @@
 
+import pytest
+from unittest.mock import MagicMock, patch
+from app.analysis.search.vector_store import LegalVectorStore
+
 from unittest.mock import MagicMock, patch
 
 import pytest

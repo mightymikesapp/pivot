@@ -8,6 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from app.config import Settings, get_settings
+from app.settings_base import BaseSettings
 
 
 class TestDefaultSettings:

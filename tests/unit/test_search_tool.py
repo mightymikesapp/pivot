@@ -1,4 +1,7 @@
 
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+from app.tools.search import semantic_search, purge_memory, get_library_stats, get_vector_store
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -38,6 +41,7 @@ async def test_semantic_search():
             {"case_name": "Case B", "citation": "2 U.S. 2"}
         ]]
     }
+    
 
     # Mock existing IDs check
     mock_vector_store.collection.get.return_value = {"ids": []}
@@ -184,6 +188,8 @@ def test_vector_store_lazy_initialization():
         # we need to patch 'app.analysis.search.vector_store.LegalVectorStore'
         # BUT, since we modified search.py to do 'from app.analysis.search.vector_store import LegalVectorStore',
         # we can patch it there. However, `sys.modules` patching is safer for local imports.
+        
+        with patch("app.analysis.search.vector_store.LegalVectorStore", return_value=mock_store_instance) as mock_cls:
 
         with patch("app.analysis.search.vector_store.LegalVectorStore", return_value=mock_store_instance):
             # Reset global
@@ -193,6 +199,7 @@ def test_vector_store_lazy_initialization():
             # First call should initialize
             result1 = get_vector_store()
             # assert mock_cls.called # This might be tricky with local import mocking
+            
 
             # Ideally we just check result is not None if mocking fails
             assert result1 is not None

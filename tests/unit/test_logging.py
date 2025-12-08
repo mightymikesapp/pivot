@@ -5,6 +5,7 @@ import json
 import logging
 import time
 from io import StringIO
+from unittest.mock import MagicMock, patch
 from unittest.mock import patch
 
 import pytest
@@ -293,6 +294,12 @@ class TestToolLoggingDecorator:
         logger.addHandler(handler)
 
         try:
+            @tool_logging("test_tool")
+            def test_func(arg1: str, arg2: int = 10):
+                return f"{arg1}-{arg2}"
+
+            # Call the decorated function
+            with patch("app.logging_config.logging.getLogger", return_value=logger):
             with patch("app.logging_config.logging.getLogger", return_value=logger):
                 @tool_logging("test_tool")
                 def test_func(arg1: str, arg2: int = 10):
@@ -303,6 +310,7 @@ class TestToolLoggingDecorator:
 
             assert result == "hello-20"
             # We should have start and end events
+            events = [r.getMessage() for r in log_records if hasattr(r, "event")]
             messages = [record.getMessage() for record in log_records]
             assert "Tool call started" in messages
             assert "Tool call completed" in messages
@@ -367,6 +375,7 @@ class TestToolLoggingDecorator:
 
     def test_tool_logging_sets_correlation_id(self):
         """Test that tool_logging decorator sets a correlation ID."""
+        logger = logging.getLogger("test")
 
         @tool_logging("test_tool")
         def test_func():
@@ -379,6 +388,7 @@ class TestToolLoggingDecorator:
 
     def test_tool_logging_sets_metadata(self):
         """Test that tool_logging decorator sets request metadata."""
+        logger = logging.getLogger("test")
 
         @tool_logging("test_tool")
         def test_func():
@@ -401,6 +411,7 @@ class TestToolLoggingDecorator:
 
     def test_tool_logging_with_citation_argument(self):
         """Test that tool_logging extracts citation from function arguments."""
+        logger = logging.getLogger("test")
 
         @tool_logging("test_tool")
         def test_func(citation: str):
@@ -411,6 +422,7 @@ class TestToolLoggingDecorator:
 
     def test_tool_logging_with_citation_id_argument(self):
         """Test that tool_logging extracts citation_id from function arguments."""
+        logger = logging.getLogger("test")
 
         @tool_logging("test_tool")
         def test_func(citation_id: str):
@@ -421,6 +433,7 @@ class TestToolLoggingDecorator:
 
     def test_tool_logging_with_citation_text_argument(self):
         """Test that tool_logging extracts citation_text from function arguments."""
+        logger = logging.getLogger("test")
 
         @tool_logging("test_tool")
         def test_func(citation_text: str):
@@ -468,6 +481,7 @@ class TestToolLoggingDecorator:
 
     def test_tool_logging_cleans_up_context(self):
         """Test that tool_logging decorator cleans up context after execution."""
+        logger = logging.getLogger("test")
 
         @tool_logging("test_tool")
         def test_func():

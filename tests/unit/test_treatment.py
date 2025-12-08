@@ -89,6 +89,9 @@ async def test_get_citing_cases(mock_client):
 async def test_get_citing_cases_with_filter(mock_client, mocker):
     """Test getting citing cases with treatment filter."""
 
+    # Mock classifier to return specific types for testing filters
+    mock_classifier = MagicMock()
+
     # Create a positive analysis
     positive_analysis = MagicMock(spec=TreatmentAnalysis)
     positive_analysis.treatment_type = TreatmentType.POSITIVE
@@ -121,6 +124,7 @@ async def test_get_citing_cases_with_filter(mock_client, mocker):
         "confidence": 1.0,
     }
 
+    mocker.patch("app.tools.treatment.classifier.classify_treatment", side_effect=[positive_analysis, negative_analysis])
     mocker.patch(
         "app.tools.treatment.classifier.classify_treatment",
         side_effect=[positive_analysis, negative_analysis],
