@@ -1,5 +1,6 @@
 import asyncio
 import inspect
+import json
 import sys
 from collections.abc import Generator
 from pathlib import Path
@@ -9,45 +10,60 @@ import pytest
 from _pytest.python import Function
 
 
-# Ensure the repository root is on the import path so ``app`` can be imported
-# without requiring callers to set PYTHONPATH manually.
 ROOT_DIR = Path(__file__).resolve().parents[1]
+FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
+
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 
-def pytest_configure(config):
-    """Register common markers to silence unknown-marker warnings."""
+def _load_json_fixture(filename: str) -> dict:
+    return json.loads((FIXTURES_DIR / filename).read_text())
 
-    config.addinivalue_line("markers", "asyncio: mark a test as asyncio-enabled")
+
+def _load_text_fixture(filename: str) -> str:
+    return (FIXTURES_DIR / filename).read_text()
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Register CLI and ini options used across the test suite."""
+
+    parser.addini(
+        "asyncio_mode",
+        "Asyncio execution mode (provided for compatibility with pytest-asyncio)",
+        default="auto",
+    )
+    parser.addoption(
+        "--run-integration",
+        action="store_true",
+        default=False,
+        help="Run tests marked as integration that hit external services.",
+    )
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Register custom markers and silence unknown marker warnings."""
+
+    config.addinivalue_line("markers", "asyncio: mark a coroutine test")
+    config.addinivalue_line("markers", "integration: mark a test that hits external services")
+    config.addinivalue_line("markers", "unit: mark a test that runs without external services")
 
 
 @pytest.fixture
 def mock_client(mocker):
     """Mock the CourtListener client and patch common access points."""
 
+    fixture_data = _load_json_fixture("courtlistener_case.json")
+    full_text = _load_text_fixture("roe_v_wade_text.txt")
+
     client_mock = AsyncMock()
 
-    # Common mock data
-    roe_case = {
-        "caseName": "Roe v. Wade",
-        "citation": ["410 U.S. 113"],
-        "dateFiled": "1973-01-22",
-        "court": "scotus",
-        "cluster_id": 12345,
-        "opinions": [{"id": 111}],
-    }
-
-    citing_case = {
-        "caseName": "Planned Parenthood v. Casey",
-        "citation": ["505 U.S. 833"],
-        "dateFiled": "1992-06-29",
-        "opinions": [{"id": 222}],
-    }
+    roe_case = fixture_data["roe_case"]
+    citing_case = fixture_data["citing_case"]
+    opinion_payload = fixture_data["opinion"]
 
     client_mock.lookup_citation.return_value = roe_case
 
-    # Mock find_citing_cases
     client_mock.find_citing_cases.return_value = {
         "results": [citing_case],
         "warnings": [],
@@ -56,22 +72,15 @@ def mock_client(mocker):
         "confidence": 1.0,
     }
 
-    # Mock get_opinion_full_text
-    client_mock.get_opinion_full_text.return_value = "This case affirms the essential holding of Roe. The right of privacy is broad enough to encompass a woman's decision."
+    client_mock.get_opinion_full_text.return_value = full_text
 
-    # Mock search_opinions
     client_mock.search_opinions.return_value = {
         "count": 1,
-        "results": [roe_case]
+        "results": [roe_case],
     }
 
-    # Mock get_opinion
-    client_mock.get_opinion.return_value = {
-        "plain_text": "Full text of the opinion...",
-        "html_lawbox": "<p>HTML content</p>",
-    }
+    client_mock.get_opinion.return_value = opinion_payload
 
-    # Patch get_client in common modules
     mocker.patch("app.mcp_client.get_client", return_value=client_mock)
     mocker.patch("app.tools.treatment.get_client", return_value=client_mock)
     mocker.patch("app.tools.verification.get_client", return_value=client_mock)
@@ -90,21 +99,6 @@ def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
         loop.close()
 
 
-def pytest_addoption(parser: pytest.Parser) -> None:
-    """Register ini options expected by asyncio-aware tests."""
-    parser.addini(
-        "asyncio_mode",
-        "Asyncio execution mode (provided for compatibility with pytest-asyncio)",
-        default="auto",
-    )
-
-
-@pytest.hookimpl(tryfirst=True)
-def pytest_configure(config: pytest.Config) -> None:
-    """Register custom markers used in the test suite."""
-    config.addinivalue_line("markers", "asyncio: mark a coroutine test")
-
-
 @pytest.hookimpl(tryfirst=True)
 def pytest_pycollect_makeitem(collector: pytest.Collector, name: str, obj: object):
     """Collect coroutine test functions as regular pytest functions."""
@@ -114,56 +108,31 @@ def pytest_pycollect_makeitem(collector: pytest.Collector, name: str, obj: objec
 
 
 @pytest.hookimpl(tryfirst=True)
-def pytest_pyfunc_call(pyfuncitem: pytest.Function) -> bool | None:
-    """Execute coroutine tests using an event loop."""
-    test_obj = pyfuncitem.obj
-    if not inspect.iscoroutinefunction(test_obj):
-        return None
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Skip integration tests unless explicitly requested and mark unit tests by default."""
 
-    loop: asyncio.AbstractEventLoop | None = pyfuncitem.funcargs.get("event_loop")  # type: ignore[attr-defined]
-    created_loop = False
-
-    if loop is None:
-        loop = asyncio.new_event_loop()
-        created_loop = True
-
-    try:
-        asyncio.set_event_loop(loop)
-        kwargs = {name: pyfuncitem.funcargs[name] for name in pyfuncitem._fixtureinfo.argnames}
-        loop.run_until_complete(test_obj(**kwargs))
-    finally:
-        if created_loop:
-            loop.close()
-        asyncio.set_event_loop(None)
-    return True
-
-
-def pytest_collection_modifyitems(config, items):
-    """Mark tests as unit by default unless explicitly tagged as integration."""
-
+    run_integration = config.getoption("--run-integration")
+    skip_integration = pytest.mark.skip(reason="use --run-integration to run integration tests")
     unit_marker = pytest.mark.unit
 
     for item in items:
-        if not any(mark.name == "integration" for mark in item.iter_markers()):
+        if any(mark.name == "integration" for mark in item.iter_markers()):
+            if not run_integration:
+                item.add_marker(skip_integration)
+        else:
             item.add_marker(unit_marker)
 
 
-def pytest_pyfunc_call(pyfuncitem):
-    """Allow async tests to run even if pytest-asyncio plugin is unavailable.
+@pytest.hookimpl(tryfirst=True)
+def pytest_pyfunc_call(pyfuncitem: pytest.Function) -> bool | None:
+    """Allow async tests to run even if pytest-asyncio plugin is unavailable."""
 
-    When the asyncio plugin is present we defer to it; otherwise we manually run
-    coroutine tests with ``asyncio.run`` so that async test suites can execute
-    in constrained environments.
-    """
-
-    # If pytest-asyncio is installed, let it handle async tests.
     if pyfuncitem.config.pluginmanager.hasplugin("asyncio"):
         return None
 
     testfunction = pyfuncitem.obj
 
     if inspect.iscoroutinefunction(testfunction):
-        # Filter out built-in pytest fixtures that shouldn't be passed to the test function
         func_args = {
             name: value
             for name, value in pyfuncitem.funcargs.items()
