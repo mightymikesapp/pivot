@@ -1,0 +1,29 @@
+{
+  "caseName": "Roe v. Wade",
+  "citation": ["410 U.S. 113"],
+  "citations": [
+    {"type": "official", "cite": "410 U.S. 113"},
+    {"type": "parallel", "cite": "93 S. Ct. 705"}
+  ],
+  "dateFiled": "1973-01-22",
+  "docketNumber": "70-18",
+  "court": "scotus",
+  "absolute_url": "/opinion/10894/roe-v-wade/",
+  "download_url": "https://www.courtlistener.com/v1/opinions/111/?format=text",
+  "cluster_id": 12345,
+  "opinions": [
+    {
+      "id": 111,
+      "author": "Justice Harry A. Blackmun",
+      "joined_by": [
+        "Chief Justice Burger",
+        "Justice Douglas",
+        "Justice Brennan",
+        "Justice Stewart",
+        "Justice Marshall"
+      ]
+    }
+  ],
+  "judges": ["Blackmun"],
+  "summary": "Supreme Court decision recognizing a constitutional right to privacy that encompasses a woman's decision to terminate a pregnancy."
+}

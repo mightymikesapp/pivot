@@ -6,6 +6,7 @@ import logging
 import time
 from io import StringIO
 from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -299,11 +300,20 @@ class TestToolLoggingDecorator:
 
             # Call the decorated function
             with patch("app.logging_config.logging.getLogger", return_value=logger):
+            with patch("app.logging_config.logging.getLogger", return_value=logger):
+                @tool_logging("test_tool")
+                def test_func(arg1: str, arg2: int = 10):
+                    return f"{arg1}-{arg2}"
+
+                # Call the decorated function
                 result = test_func("hello", arg2=20)
 
             assert result == "hello-20"
             # We should have start and end events
             events = [r.getMessage() for r in log_records if hasattr(r, "event")]
+            messages = [record.getMessage() for record in log_records]
+            assert "Tool call started" in messages
+            assert "Tool call completed" in messages
         finally:
             logger.removeHandler(handler)
 

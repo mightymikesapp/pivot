@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import logging
 import time
-from contextlib import contextmanager
 from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any, Mapping
 
-from app.logging_config import JsonFormatter, correlation_id_ctx, request_metadata_ctx
+from app.logging_config import correlation_id_ctx, request_metadata_ctx
 
 
 def log_event(

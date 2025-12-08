@@ -125,6 +125,10 @@ async def test_get_citing_cases_with_filter(mock_client, mocker):
     }
 
     mocker.patch("app.tools.treatment.classifier.classify_treatment", side_effect=[positive_analysis, negative_analysis])
+    mocker.patch(
+        "app.tools.treatment.classifier.classify_treatment",
+        side_effect=[positive_analysis, negative_analysis],
+    )
 
     # Test filtering for negative
     result = await get_citing_cases_impl(

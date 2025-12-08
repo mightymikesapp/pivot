@@ -11,7 +11,7 @@ from contextvars import ContextVar, Token
 from datetime import UTC, datetime
 from functools import wraps
 from inspect import Signature, signature
-from typing import Any, Awaitable, Callable, ParamSpec, TypeVar, cast, overload
+from typing import Any, Awaitable, Callable, ParamSpec, TypeVar, cast
 
 correlation_id_ctx: ContextVar[str | None] = ContextVar("correlation_id", default=None)
 request_metadata_ctx: ContextVar[dict[str, Any]] = ContextVar("request_metadata", default={})

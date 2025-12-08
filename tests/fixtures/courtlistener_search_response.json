@@ -1,0 +1,18 @@
+{
+  "count": 1,
+  "results": [
+    {
+      "id": 111,
+      "caseName": "Roe v. Wade",
+      "citation": ["410 U.S. 113"],
+      "dateFiled": "1973-01-22",
+      "court": "scotus",
+      "cluster_id": 12345,
+      "absolute_url": "/opinion/10894/roe-v-wade/",
+      "download_url": "https://www.courtlistener.com/v1/opinions/111/?format=text",
+      "score": 98.4,
+      "precedential_status": "Published",
+      "docketNumber": "70-18"
+    }
+  ]
+}

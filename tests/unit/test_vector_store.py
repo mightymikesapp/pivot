@@ -3,6 +3,13 @@ import pytest
 from unittest.mock import MagicMock, patch
 from app.analysis.search.vector_store import LegalVectorStore
 
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from app.analysis.search.vector_store import LegalVectorStore
+
+
 class TestLegalVectorStore:
     @pytest.fixture
     def mock_chroma(self):
@@ -24,6 +31,8 @@ class TestLegalVectorStore:
             store = LegalVectorStore(persistence_path="./custom_path")
             # Use ANY from unittest.mock, or just don't check the second arg if not needed
             from unittest.mock import ANY
+
+            assert isinstance(store, LegalVectorStore)
             mock_chroma.assert_called_with(path="custom_path", settings=ANY)
 
     def test_add_documents(self, store):
