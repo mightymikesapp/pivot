@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import NotRequired, TypedDict
+from typing import NotRequired
+
+from typing_extensions import TypedDict
 
 
 class CourtListenerOpinion(TypedDict, total=False):

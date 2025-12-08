@@ -5,7 +5,6 @@ It handles model initialization, document storage, and similarity search.
 """
 
 import logging
-import os
 from pathlib import Path
 from typing import Any, cast
 

@@ -8,15 +8,14 @@ from typing import Any
 from fastmcp import FastMCP
 
 from app.analysis.mermaid_generator import MermaidGenerator
-from app.logging_config import tool_logging
 from app.config import get_settings
+from app.logging_config import tool_logging
 from app.logging_utils import log_event, log_operation
 from app.mcp_client import get_client
+from app.mcp_types import ToolPayload
 from app.tools.network import build_citation_network_impl
 from app.tools.treatment import check_case_validity_impl
 from app.tools.verification import batch_verify_quotes_impl
-from app.mcp_types import ToolPayload
-
 
 LEGAL_DISCLAIMER = (
     "\n\n---\n"
@@ -295,21 +294,21 @@ async def check_api_status(request_id: str | None = None) -> dict[str, Any]:
     """
     client = get_client()
     import time
-    
+
     start_time = time.time()
     try:
         # We'll try a lightweight lookup, e.g. a known case or just the root endpoint if supported
         # For now, let's try to lookup Roe v. Wade as a health check
         result = await client.lookup_citation("410 U.S. 113", request_id=request_id)
         latency = time.time() - start_time
-        
+
         if "error" in result:
              return {
                 "status": "error",
                 "error": result["error"],
                 "latency_seconds": latency
             }
-            
+
         return {
             "status": "healthy",
             "latency_seconds": latency,
