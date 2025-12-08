@@ -1,0 +1,20 @@
+{
+  "roe_case": {
+    "caseName": "Roe v. Wade",
+    "citation": ["410 U.S. 113"],
+    "dateFiled": "1973-01-22",
+    "court": "scotus",
+    "cluster_id": 12345,
+    "opinions": [{"id": 111}]
+  },
+  "citing_case": {
+    "caseName": "Planned Parenthood v. Casey",
+    "citation": ["505 U.S. 833"],
+    "dateFiled": "1992-06-29",
+    "opinions": [{"id": 222}]
+  },
+  "opinion": {
+    "plain_text": "Full text of the opinion...",
+    "html_lawbox": "<p>HTML content</p>"
+  }
+}

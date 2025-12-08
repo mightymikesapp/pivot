@@ -79,7 +79,7 @@ NEGATIVE_SIGNALS = {
     r"\blimited\s+to\b": ("limited to", 0.7),
     r"\bdistinguished\b": ("distinguished", 0.5),  # Can be neutral, but often negative
     r"\bno\s+longer\s+good\s+law\b": ("no longer good law", 1.0),
-    r"\bnot\s+followed\b": ("not followed", 0.85),
+    r"\bnot\s+follow(?:ed)?\b": ("not followed", 0.85),
     r"\bsuperseded\b": ("superseded", 0.95),
     r"\bvacated\b": ("vacated", 0.9),
 }

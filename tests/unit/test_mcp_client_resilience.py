@@ -2,19 +2,18 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
-from tenacity import RetryError
 
 from app.cache import CacheType
+from app.config import Settings
 from app.mcp_client import (
     CircuitBreakerOpenError,
-    CitingCasesResult,
     CourtListenerClient,
 )
-from app.config import Settings
+
 
 # Helper to run async code in sync tests
 def run(coro):
@@ -27,7 +26,7 @@ def make_http_error(status_code: int) -> httpx.HTTPStatusError:
 
 def test_retry_logic(monkeypatch):
     """Client should retry on 5xx errors."""
-    
+
     settings = Settings(
         courtlistener_api_key="token",
         courtlistener_retry_attempts=3,
@@ -38,7 +37,7 @@ def test_retry_logic(monkeypatch):
     # Mock the inner client.request to fail twice then succeed
     response_503 = httpx.Response(503, request=httpx.Request("GET", "https://example.com"))
     response_200 = httpx.Response(200, json={"ok": True}, request=httpx.Request("GET", "https://example.com"))
-    
+
     mock_request = AsyncMock(side_effect=[
         httpx.HTTPStatusError("Server Error", request=response_503.request, response=response_503),
         httpx.HTTPStatusError("Server Error", request=response_503.request, response=response_503),
@@ -50,7 +49,7 @@ def test_retry_logic(monkeypatch):
     monkeypatch.setattr("asyncio.sleep", AsyncMock())
 
     response = run(client._request("GET", "search/"))
-    
+
     assert response.status_code == 200
     assert mock_request.await_count == 3
 
@@ -84,16 +83,16 @@ def test_circuit_breaker_opens(monkeypatch):
     client.circuit_open_until = datetime.now(UTC) - timedelta(seconds=1)
     with pytest.raises(httpx.RequestError):
         run(client._request("GET", "search/"))
-        
+
     # Should have tried again
     assert failing_request.await_count == 6
 
 def test_partial_results_and_confidence(monkeypatch):
     """Failed requests should be reported while returning successful results."""
-    
+
     settings = Settings(courtlistener_api_key="token")
     client = CourtListenerClient(settings)
-    
+
     class DummyCache:
         def __init__(self) -> None:
             self.store: dict[tuple[CacheType, tuple[tuple[str, Any], ...]], Any] = {}
@@ -115,8 +114,8 @@ def test_partial_results_and_confidence(monkeypatch):
     client.cache_manager = DummyCache()
 
     success_response = httpx.Response(
-        200, 
-        json={"results": [{"caseName": "Citing Case"}]}, 
+        200,
+        json={"results": [{"caseName": "Citing Case"}]},
         request=httpx.Request("GET", "https://example.com"),
     )
 
@@ -125,13 +124,13 @@ def test_partial_results_and_confidence(monkeypatch):
             return success_response
         request_side_effect.failed_once = True
         raise make_http_error(503)
-    
+
     request_side_effect.failed_once = False
     client._request = AsyncMock(side_effect=request_side_effect)
     monkeypatch.setattr("asyncio.sleep", AsyncMock())
 
     result = run(client.find_citing_cases("410 U.S. 113"))
-    
+
     # Verify structure instead of strict type check if class matches failed
     assert isinstance(result, dict)
     assert result["confidence"] < 1.0

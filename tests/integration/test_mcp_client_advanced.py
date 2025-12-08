@@ -1,18 +1,15 @@
 """Advanced tests for CourtListener client covering caching and retries."""
 
-import json
-import time
 import logging
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch, mock_open
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
-from app.mcp_client import CourtListenerClient, get_client
-from app.config import Settings
 from app.cache import CacheType
-
+from app.config import Settings
+from app.mcp_client import CourtListenerClient, get_client
 
 pytestmark = pytest.mark.integration
 
@@ -36,11 +33,11 @@ def client(mock_settings, tmp_path):
         mock_client_cls.return_value = mock_instance
 
         client = CourtListenerClient(mock_settings)
-        
+
         # Replace the cache manager with a fresh one using tmp_path
         from app.cache import CacheManager
         client.cache_manager = CacheManager(base_dir=tmp_path / "cache")
-        
+
         # Explicitly set the client to our mock instance
         client.client = mock_instance
         yield client

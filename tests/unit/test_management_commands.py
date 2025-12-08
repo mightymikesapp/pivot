@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 
 import app.cache as cache_module
-from app.cache import CacheManager, CacheType
 from app import management
+from app.cache import CacheManager, CacheType
 
 
 @pytest.fixture()

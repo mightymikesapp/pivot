@@ -4,9 +4,8 @@ from pathlib import Path
 
 from pydantic import AliasChoices, Field
 
-from app.settings_base import BaseSettings, SettingsConfigDict
-
 from app.logging_config import configure_logging
+from app.settings_base import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
