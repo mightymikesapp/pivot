@@ -346,7 +346,7 @@ async def test_task_cancellation():
 
     assert "Task 0 completed" in str(results[0]) or "Task 0 cancelled" in str(results[0])
     # Task 1 should be cancelled
-    assert isinstance(results[1], asyncio.CancelledError) or str(results[1]).startswith("Task 1 cancelled")
+    assert isinstance(results[1], asyncio.CancelledError) or results[1] == "Task 1 cancelled"
 
 
 @pytest.mark.asyncio
