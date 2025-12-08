@@ -14,12 +14,17 @@ def test_sanitize_label_escapes_and_truncates():
     assert generator._sanitize_label("A" * 50, max_length=10) == "AAAAAAA..."
 
 
-def test_get_node_id_produces_safe_identifiers():
+@pytest.mark.parametrize(
+    "citation, expected_id",
+    [
+        ("410 U.S. 113", "case_410_U_S__113"),
+        ("Case-Name, Inc.", "Case_Name__Inc_"),
+        ("123 Example", "case_123_Example"),
+    ],
+)
+def test_get_node_id_produces_safe_identifiers(citation, expected_id):
     generator = MermaidGenerator()
-
-    assert generator._get_node_id("410 U.S. 113") == "case_410_U_S__113"
-    assert generator._get_node_id("Case-Name, Inc.") == "Case_Name__Inc_"
-    assert generator._get_node_id("123 Example") == "case_123_Example"
+    assert generator._get_node_id(citation) == expected_id
 
 
 def test_get_treatment_style_classification():
