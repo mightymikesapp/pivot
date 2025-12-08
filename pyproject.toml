@@ -61,8 +61,11 @@ module = ["fastmcp", "fastmcp.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests/unit", "tests/integration"]
+addopts = ["--strict-markers", "-m", "not integration"]
 markers = [
     "unit: fast-running unit tests",
-    "integration: slower integration or end-to-end tests",
+    "integration: slower integration or end-to-end tests (enable with --run-integration)",
+    "run_integration: include integration tests when using the --run-integration flag",
+    "fixtures_dir: shared test data stored in tests/fixtures for parameterized cases",
 ]

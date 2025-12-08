@@ -97,12 +97,24 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "Asyncio execution mode (provided for compatibility with pytest-asyncio)",
         default="auto",
     )
+    parser.addoption(
+        "--run-integration",
+        action="store_true",
+        default=False,
+        help="Include tests marked as integration",
+    )
 
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_configure(config: pytest.Config) -> None:
     """Register custom markers used in the test suite."""
     config.addinivalue_line("markers", "asyncio: mark a coroutine test")
+
+    if config.getoption("--run-integration"):
+        # The default "-m not integration" expression in ``pyproject.toml``
+        # excludes integration tests. Clear it so the explicit flag can
+        # include them without requiring callers to override mark selection.
+        config.option.markexpr = ""
 
 
 @pytest.hookimpl(tryfirst=True)
@@ -142,9 +154,19 @@ def pytest_collection_modifyitems(config, items):
     """Mark tests as unit by default unless explicitly tagged as integration."""
 
     unit_marker = pytest.mark.unit
+    run_integration = config.getoption("--run-integration")
+    skip_integration = pytest.mark.skip(
+        reason="Integration tests require --run-integration"
+    )
 
     for item in items:
-        if not any(mark.name == "integration" for mark in item.iter_markers()):
+        is_integration = any(mark.name == "integration" for mark in item.iter_markers())
+
+        if is_integration and not run_integration:
+            item.add_marker(skip_integration)
+            continue
+
+        if not is_integration:
             item.add_marker(unit_marker)
 
 
