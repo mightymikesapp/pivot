@@ -3,6 +3,7 @@ import inspect
 import json
 import sys
 from collections.abc import Generator
+from copy import deepcopy
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -14,6 +15,8 @@ FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
+
+FIXTURE_DIR = Path(__file__).parent / "fixtures"
 
 
 def _load_json_fixture(filename: str) -> dict:
@@ -48,13 +51,69 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "unit: mark a test that runs without external services")
 
 
+def _load_json_fixture(file_name: str) -> dict[str, object]:
+    return json.loads((FIXTURE_DIR / file_name).read_text())
+
+
+def _load_text_fixture(file_name: str) -> str:
+    return (FIXTURE_DIR / file_name).read_text()
+
+
+@pytest.fixture(scope="session")
+def roe_metadata_payload() -> dict[str, object]:
+    return _load_json_fixture("roe_metadata.json")
+
+
+@pytest.fixture(scope="session")
+def courtlistener_search_payload() -> dict[str, object]:
+    return _load_json_fixture("courtlistener_search_response.json")
+
+
+@pytest.fixture(scope="session")
+def courtlistener_citing_cases_payload() -> dict[str, object]:
+    return _load_json_fixture("courtlistener_citing_cases_response.json")
+
+
+@pytest.fixture(scope="session")
+def courtlistener_opinion_payload() -> dict[str, object]:
+    return _load_json_fixture("courtlistener_opinion_response.json")
+
+
+@pytest.fixture(scope="session")
+def roe_opinion_text() -> str:
+    return _load_text_fixture("roe_opinion_excerpt.txt")
+
+
 @pytest.fixture
-def mock_client(mocker):
+def mock_client(
+    mocker,
+    roe_metadata_payload,
+    courtlistener_citing_cases_payload,
+    courtlistener_opinion_payload,
+    courtlistener_search_payload,
+    roe_opinion_text,
+):
     """Mock the CourtListener client and patch common access points."""
 
     fixture_data = _load_json_fixture("courtlistener_case.json")
     full_text = _load_text_fixture("roe_v_wade_text.txt")
 
+    # Common mock data
+    client_mock.lookup_citation.return_value = deepcopy(roe_metadata_payload)
+
+    # Mock find_citing_cases
+    client_mock.find_citing_cases.return_value = deepcopy(
+        courtlistener_citing_cases_payload
+    )
+
+    # Mock get_opinion_full_text
+    client_mock.get_opinion_full_text.return_value = roe_opinion_text
+
+    # Mock search_opinions
+    client_mock.search_opinions.return_value = deepcopy(courtlistener_search_payload)
+
+    # Mock get_opinion
+    client_mock.get_opinion.return_value = deepcopy(courtlistener_opinion_payload)
     client_mock = AsyncMock()
 
     roe_case = fixture_data["roe_case"]
