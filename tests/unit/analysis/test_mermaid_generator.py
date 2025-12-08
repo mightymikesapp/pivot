@@ -27,14 +27,19 @@ def test_get_node_id_produces_safe_identifiers(citation, expected_id):
     assert generator._get_node_id(citation) == expected_id
 
 
-def test_get_treatment_style_classification():
+@pytest.mark.parametrize(
+    "treatment, expected_style",
+    [
+        ("OverRuled", "negative"),
+        ("Followed", "positive"),
+        ("Limited", "questioned"),
+        (None, "neutral"),
+        ("mentioned", "neutral"),
+    ],
+)
+def test_get_treatment_style_classification(treatment, expected_style):
     generator = MermaidGenerator()
-
-    assert generator._get_treatment_style("OverRuled") == "negative"
-    assert generator._get_treatment_style("Followed") == "positive"
-    assert generator._get_treatment_style("Limited") == "questioned"
-    assert generator._get_treatment_style(None) == "neutral"
-    assert generator._get_treatment_style("mentioned") == "neutral"
+    assert generator._get_treatment_style(treatment) == expected_style
 
 
 def test_build_color_palette_preserves_base_and_adds_fallbacks():
