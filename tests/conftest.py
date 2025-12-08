@@ -1,7 +1,9 @@
 import asyncio
 import inspect
+import json
 import sys
 from collections.abc import Generator
+from copy import deepcopy
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -15,6 +17,8 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+FIXTURE_DIR = Path(__file__).parent / "fixtures"
+
 
 def pytest_configure(config):
     """Register common markers to silence unknown-marker warnings."""
@@ -22,54 +26,68 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "asyncio: mark a test as asyncio-enabled")
 
 
+def _load_json_fixture(file_name: str) -> dict[str, object]:
+    return json.loads((FIXTURE_DIR / file_name).read_text())
+
+
+def _load_text_fixture(file_name: str) -> str:
+    return (FIXTURE_DIR / file_name).read_text()
+
+
+@pytest.fixture(scope="session")
+def roe_metadata_payload() -> dict[str, object]:
+    return _load_json_fixture("roe_metadata.json")
+
+
+@pytest.fixture(scope="session")
+def courtlistener_search_payload() -> dict[str, object]:
+    return _load_json_fixture("courtlistener_search_response.json")
+
+
+@pytest.fixture(scope="session")
+def courtlistener_citing_cases_payload() -> dict[str, object]:
+    return _load_json_fixture("courtlistener_citing_cases_response.json")
+
+
+@pytest.fixture(scope="session")
+def courtlistener_opinion_payload() -> dict[str, object]:
+    return _load_json_fixture("courtlistener_opinion_response.json")
+
+
+@pytest.fixture(scope="session")
+def roe_opinion_text() -> str:
+    return _load_text_fixture("roe_opinion_excerpt.txt")
+
+
 @pytest.fixture
-def mock_client(mocker):
+def mock_client(
+    mocker,
+    roe_metadata_payload,
+    courtlistener_citing_cases_payload,
+    courtlistener_opinion_payload,
+    courtlistener_search_payload,
+    roe_opinion_text,
+):
     """Mock the CourtListener client and patch common access points."""
 
     client_mock = AsyncMock()
 
     # Common mock data
-    roe_case = {
-        "caseName": "Roe v. Wade",
-        "citation": ["410 U.S. 113"],
-        "dateFiled": "1973-01-22",
-        "court": "scotus",
-        "cluster_id": 12345,
-        "opinions": [{"id": 111}],
-    }
-
-    citing_case = {
-        "caseName": "Planned Parenthood v. Casey",
-        "citation": ["505 U.S. 833"],
-        "dateFiled": "1992-06-29",
-        "opinions": [{"id": 222}],
-    }
-
-    client_mock.lookup_citation.return_value = roe_case
+    client_mock.lookup_citation.return_value = deepcopy(roe_metadata_payload)
 
     # Mock find_citing_cases
-    client_mock.find_citing_cases.return_value = {
-        "results": [citing_case],
-        "warnings": [],
-        "failed_requests": [],
-        "incomplete_data": False,
-        "confidence": 1.0,
-    }
+    client_mock.find_citing_cases.return_value = deepcopy(
+        courtlistener_citing_cases_payload
+    )
 
     # Mock get_opinion_full_text
-    client_mock.get_opinion_full_text.return_value = "This case affirms the essential holding of Roe. The right of privacy is broad enough to encompass a woman's decision."
+    client_mock.get_opinion_full_text.return_value = roe_opinion_text
 
     # Mock search_opinions
-    client_mock.search_opinions.return_value = {
-        "count": 1,
-        "results": [roe_case]
-    }
+    client_mock.search_opinions.return_value = deepcopy(courtlistener_search_payload)
 
     # Mock get_opinion
-    client_mock.get_opinion.return_value = {
-        "plain_text": "Full text of the opinion...",
-        "html_lawbox": "<p>HTML content</p>",
-    }
+    client_mock.get_opinion.return_value = deepcopy(courtlistener_opinion_payload)
 
     # Patch get_client in common modules
     mocker.patch("app.mcp_client.get_client", return_value=client_mock)

@@ -1,0 +1,26 @@
+{
+  "results": [
+    {
+      "caseName": "Planned Parenthood v. Casey",
+      "citation": ["505 U.S. 833"],
+      "dateFiled": "1992-06-29",
+      "court": "scotus",
+      "cluster_id": 22222,
+      "absolute_url": "/opinion/112750/planned-parenthood-v-casey/",
+      "opinions": [{"id": 222}]
+    },
+    {
+      "caseName": "Whole Woman's Health v. Hellerstedt",
+      "citation": ["579 U.S. ___"],
+      "dateFiled": "2016-06-27",
+      "court": "scotus",
+      "cluster_id": 33333,
+      "absolute_url": "/opinion/3221525/whole-womans-health-v-hellerstedt/",
+      "opinions": [{"id": 333}]
+    }
+  ],
+  "warnings": [],
+  "failed_requests": [],
+  "incomplete_data": false,
+  "confidence": 0.97
+}
